@@ -11,6 +11,8 @@ import { ReportsPage } from './pages/ReportsPage.js';
 import { CustomersPage } from './pages/CustomersPage.js';
 import { EmployeesPage } from './pages/EmployeesPage.js';
 import { ActivityPage } from './pages/ActivityPage.js';
+import { SuppliersPage } from './pages/SuppliersPage.js';
+import { SalesPage } from './pages/SalesPage.js';
 import type { Role } from './api/types.js';
 
 function AppRoutes() {
@@ -26,12 +28,14 @@ function AppRoutes() {
           <Route element={<ProtectedRoute roles={['ADMIN', 'STOCK_MANAGER'] as Role[]} />}>
             <Route path="products" element={<ProductsPage />} />
             <Route path="inventory" element={<InventoryPage />} />
+            <Route path="suppliers" element={<SuppliersPage />} />
           </Route>
           <Route element={<ProtectedRoute roles={['ADMIN', 'CASHIER'] as Role[]} />}>
             <Route path="pos" element={<POSPage />} />
             <Route path="customers" element={<CustomersPage />} />
           </Route>
           <Route element={<ProtectedRoute roles={['ADMIN'] as Role[]} />}>
+            <Route path="sales" element={<SalesPage />} />
             <Route path="reports" element={<ReportsPage />} />
             <Route path="employees" element={<EmployeesPage />} />
             <Route path="activity" element={<ActivityPage />} />

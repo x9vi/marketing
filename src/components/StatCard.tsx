@@ -1,14 +1,34 @@
-export function StatCard({ label, value, hint, accent }: { label: string; value: string; hint?: string; accent?: string }) {
+export function StatCard({
+  label,
+  value,
+  hint,
+  accent,
+  trend
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+  accent?: string;
+  trend?: 'up' | 'down';
+}) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/5 p-4 shadow-glow backdrop-blur">
-      <div className="flex items-center justify-between gap-3">
+    <div className="admin-panel p-4 transition hover:border-white/15">
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-xs uppercase tracking-[0.24em] text-slate-400">{label}</p>
-          <p className="mt-2 text-2xl font-semibold text-white">{value}</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">{label}</p>
+          <p className="mt-2 text-2xl font-bold tracking-tight text-white">{value}</p>
         </div>
-        {accent ? <div className="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs text-slate-200">{accent}</div> : null}
+        {accent ? (
+          <span
+            className={`rounded-lg px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${
+              trend === 'down' ? 'bg-amber-500/20 text-amber-300' : 'bg-mint-500/15 text-mint-300'
+            }`}
+          >
+            {accent}
+          </span>
+        ) : null}
       </div>
-      {hint ? <p className="mt-3 text-sm text-slate-400">{hint}</p> : null}
+      {hint ? <p className="mt-2.5 text-sm text-slate-400">{hint}</p> : null}
     </div>
   );
 }

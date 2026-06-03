@@ -1,67 +1,139 @@
-import { NavLink, Outlet } from 'react-router-dom';
+import { useState } from 'react';
+import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.js';
+import { SupermarketBackground } from './SupermarketBackground.js';
+import { NavIcon } from './NavIcon.js';
+import { defaultAppPath, navItemsForRole } from '../config/nav.js';
 import type { Role } from '../api/types.js';
 
-const navByRole: Record<Role | 'ALL', Array<{ to: string; label: string; roles?: Role[] }>> = {
-  ALL: [
-    { to: '/app', label: 'Dashboard' },
-    { to: '/app/products', label: 'Products' },
-    { to: '/app/pos', label: 'POS' },
-    { to: '/app/inventory', label: 'Inventory' },
-    { to: '/app/reports', label: 'Reports' },
-    { to: '/app/customers', label: 'Customers' },
-    { to: '/app/employees', label: 'Employees' },
-    { to: '/app/activity', label: 'Activity' }
-  ],
-  ADMIN: [],
-  CASHIER: [],
-  STOCK_MANAGER: []
-};
-
-function visibleLinks(role: Role) {
-  return navByRole.ALL.filter((item) => {
-    if (!item.roles) return true;
-    return item.roles.includes(role);
-  });
+function roleLabel(role: Role) {
+  if (role === 'STOCK_MANAGER') return 'Stock manager';
+  return role.charAt(0) + role.slice(1).toLowerCase();
 }
 
 export function Layout() {
   const { user, logout } = useAuth();
-  const links = visibleLinks(user?.role ?? 'CASHIER');
+  const location = useLocation();
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const role = user?.role ?? 'CASHIER';
+  const groups = navItemsForRole(role);
+
+  const currentTitle =
+    groups.flatMap((g) => g.items).find((item) => (item.end ? location.pathname === item.to : location.pathname.startsWith(item.to)))?.label ??
+    'FreshMart';
+
+  const isPos = location.pathname === '/app/pos';
+
+  if (isPos) {
+    return (
+      <SupermarketBackground variant="app" className="min-h-screen text-slate-100 flex flex-col overflow-hidden p-2">
+        <main className="flex-1 flex flex-col overflow-hidden">
+          <Outlet />
+        </main>
+      </SupermarketBackground>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(126,224,197,0.18),_transparent_28%),linear-gradient(180deg,#06101d_0%,#0b1726_45%,#08111d_100%)] text-slate-100">
-      <div className="mx-auto flex min-h-screen max-w-[1600px] flex-col lg:flex-row">
-        <aside className="border-b border-white/10 bg-black/20 px-5 py-5 backdrop-blur lg:min-h-screen lg:w-72 lg:border-b-0 lg:border-r">
-          <div className="flex items-center justify-between gap-4 lg:block">
-            <div>
-              <p className="text-xs uppercase tracking-[0.35em] text-amber-300/80">Supermarket OS</p>
-              <h1 className="mt-2 text-2xl font-semibold text-white">Store Control</h1>
-              <p className="mt-1 text-sm text-slate-400">{user?.name} · {user?.role}</p>
+    <SupermarketBackground variant="app" className="admin-shell min-h-screen text-slate-100">
+      <div className="admin-shell__frame">
+        <aside className={`admin-sidebar ${mobileOpen ? 'admin-sidebar--open' : ''}`}>
+          <div className="admin-sidebar__brand">
+            <div className="admin-sidebar__logo" aria-hidden="true">
+              <svg viewBox="0 0 32 32" fill="none">
+                <rect width="32" height="32" rx="10" fill="currentColor" fillOpacity="0.15" />
+                <path d="M10 12h12l-1.2 7H11.2L9 8H7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                <circle cx="12" cy="22" r="1.5" fill="currentColor" />
+                <circle cx="20" cy="22" r="1.5" fill="currentColor" />
+              </svg>
             </div>
-            <button onClick={() => void logout()} className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-slate-200 transition hover:bg-white/10">
+            <div>
+              <p className="admin-sidebar__chain">FreshMart</p>
+              <p className="admin-sidebar__tagline">Store control</p>
+            </div>
+          </div>
+
+          <div className="admin-sidebar__store">
+            <span className="admin-sidebar__store-dot" />
+            Store #1042 · Open
+          </div>
+
+          <nav className="admin-sidebar__nav">
+            {groups.map((group) => (
+              <div key={group.title} className="admin-sidebar__group">
+                <p className="admin-sidebar__group-title">{group.title}</p>
+                <ul className="admin-sidebar__list">
+                  {group.items.map((item) => (
+                    <li key={item.to}>
+                      <NavLink
+                        to={item.to}
+                        end={item.end}
+                        onClick={() => setMobileOpen(false)}
+                        className={({ isActive }) => `admin-nav-link ${isActive ? 'admin-nav-link--active' : ''}`}
+                      >
+                        <span className="admin-nav-link__icon">
+                          <NavIcon name={item.icon} />
+                        </span>
+                        <span className="admin-nav-link__text">
+                          <span className="admin-nav-link__label">{item.label}</span>
+                          <span className="admin-nav-link__desc">{item.description}</span>
+                        </span>
+                      </NavLink>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </nav>
+
+          <div className="admin-sidebar__footer">
+            <div className="admin-sidebar__user">
+              <span className="admin-sidebar__avatar">{user?.name?.charAt(0) ?? '?'}</span>
+              <div className="min-w-0">
+                <p className="truncate font-medium text-white">{user?.name}</p>
+                <p className="truncate text-xs text-slate-400">{roleLabel(role)}</p>
+              </div>
+            </div>
+            <button type="button" onClick={() => void logout()} className="admin-sidebar__logout">
               Sign out
             </button>
           </div>
-          <nav className="mt-8 grid gap-2 lg:gap-3">
-            {links.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                end={item.to === '/app'}
-                className={({ isActive }) =>
-                  `rounded-2xl px-4 py-3 text-sm font-medium transition ${isActive ? 'bg-gold-500 text-slate-950' : 'bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white'}`
-                }
-              >
-                {item.label}
-              </NavLink>
-            ))}
-          </nav>
         </aside>
-        <main className="flex-1 px-4 py-4 sm:px-6 lg:px-8 lg:py-8">
-          <Outlet />
-        </main>
+
+        {mobileOpen ? (
+          <button type="button" className="admin-shell__backdrop" aria-label="Close menu" onClick={() => setMobileOpen(false)} />
+        ) : null}
+
+        <div className="admin-main">
+          <header className="admin-topbar">
+            <div className="admin-topbar__left">
+              <button type="button" className="admin-topbar__menu" aria-label="Open menu" onClick={() => setMobileOpen(true)}>
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                </svg>
+              </button>
+              <div>
+                <p className="admin-topbar__crumb">FreshMart · {roleLabel(role)}</p>
+                <h2 className="admin-topbar__title">{currentTitle}</h2>
+              </div>
+            </div>
+            <div className="admin-topbar__actions">
+              {role === 'ADMIN' || role === 'CASHIER' ? (
+                <Link to="/app/pos" className="admin-topbar__cta">
+                  Open POS
+                </Link>
+              ) : null}
+              <Link to={defaultAppPath(role)} className="admin-topbar__ghost">
+                Home
+              </Link>
+            </div>
+          </header>
+
+          <main className="admin-content">
+            <Outlet />
+          </main>
+        </div>
       </div>
-    </div>
+    </SupermarketBackground>
   );
 }

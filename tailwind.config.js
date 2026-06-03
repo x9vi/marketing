@@ -14,7 +14,7 @@ export default {
           500: '#e8b84f',
           600: '#d89e1f'
         },
-        mint: {
+        mint: { 
           400: '#7ee0c5',
           500: '#46c9a3'
         }

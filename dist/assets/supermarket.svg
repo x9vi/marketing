@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="g1" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0%" stop-color="#f8fafc"/>
+      <stop offset="100%" stop-color="#e6eef8"/>
+    </linearGradient>
+  </defs>
+  <rect width="1600" height="900" fill="#f3f4f6"/>
+
+  <!-- Floor -->
+  <rect x="0" y="680" width="1600" height="220" fill="#f1f5f9"/>
+
+  <!-- Aisles / shelves rows -->
+  <g fill="#e2e8f0">
+    <rect x="80" y="120" width="360" height="60" rx="8"/>
+    <rect x="80" y="220" width="360" height="60" rx="8"/>
+    <rect x="80" y="320" width="360" height="60" rx="8"/>
+
+    <rect x="520" y="120" width="360" height="60" rx="8"/>
+    <rect x="520" y="220" width="360" height="60" rx="8"/>
+    <rect x="520" y="320" width="360" height="60" rx="8"/>
+
+    <rect x="960" y="120" width="360" height="60" rx="8"/>
+    <rect x="960" y="220" width="360" height="60" rx="8"/>
+    <rect x="960" y="320" width="360" height="60" rx="8"/>
+  </g>
+
+  <!-- Product boxes on shelves (stylized) -->
+  <g fill="#c7d2fe">
+    <rect x="110" y="130" width="40" height="40" rx="4"/>
+    <rect x="160" y="130" width="40" height="40" rx="4"/>
+    <rect x="210" y="130" width="40" height="40" rx="4"/>
+
+    <rect x="550" y="130" width="40" height="40" rx="4"/>
+    <rect x="600" y="130" width="40" height="40" rx="4"/>
+    <rect x="650" y="130" width="40" height="40" rx="4"/>
+
+    <rect x="1000" y="130" width="40" height="40" rx="4"/>
+    <rect x="1050" y="130" width="40" height="40" rx="4"/>
+    <rect x="1100" y="130" width="40" height="40" rx="4"/>
+  </g>
+
+  <!-- Shopping cart silhouette -->
+  <g transform="translate(1200,520) scale(1.6)" fill="#94a3b8" opacity="0.95">
+    <path d="M2 3h2l1.6 8.4c.08.4.44.6.82.6h7.2c.4 0 .78-.2.96-.6L16 3H4" stroke="none"/>
+    <circle cx="6" cy="12" r="1.6" fill="#64748b"/>
+    <circle cx="14" cy="12" r="1.6" fill="#64748b"/>
+  </g>
+
+  <!-- Signboard -->
+  <g>
+    <rect x="80" y="30" width="240" height="60" rx="8" fill="#111827" opacity="0.9"/>
+    <text x="200" y="70" font-family="Inter, Arial" font-size="28" fill="#fff" text-anchor="middle">FreshMart</text>
+  </g>
+
+  <!-- Distant background aisles (soft shapes) -->
+  <g opacity="0.9">
+    <rect x="60" y="520" width="200" height="80" rx="6" fill="#e6eef8"/>
+    <rect x="300" y="500" width="260" height="100" rx="6" fill="#eef2ff"/>
+    <rect x="720" y="500" width="260" height="100" rx="6" fill="#e6eef8"/>
+  </g>
+
+  <!-- subtle gradient overlay for warmth -->
+  <rect width="1600" height="900" fill="url(#g1)" opacity="0.06"/>
+</svg>

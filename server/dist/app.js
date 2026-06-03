@@ -8,7 +8,7 @@ import bcrypt from 'bcryptjs';
 import multer from 'multer';
 import PDFDocument from 'pdfkit';
 import ExcelJS from 'exceljs';
-import { Prisma, Role, SaleStatus, PaymentMethod, InventoryMovementType, Unit } from '@prisma/client';
+import { Prisma, Role, SaleStatus, PaymentMethod, InventoryMovementType, Unit, CouponType, PromotionType, DrawerStatus, CashMovementType } from '@prisma/client';
 import { endOfDay, format, startOfDay, subDays } from 'date-fns';
 import { env } from './config/env.js';
 import { prisma } from './lib/prisma.js';
@@ -35,7 +35,7 @@ app.use(cookieParser());
 app.use('/uploads', express.static(uploadsDir));
 const money = currencyFormatter(env.currencyCode);
 function sendAuthUser(user) {
-    return { id: user.id, email: user.email, name: user.name, role: user.role };
+    return { id: user.id, email: user.email, name: user.name, role: user.role, active: user.active ?? true };
 }
 function logActivity(userId, action, entity, entityId, metadata) {
     return prisma.activityLog.create({
@@ -528,6 +528,37 @@ app.get('/sales', authRequired, async (req, res, next) => {
         next(error);
     }
 });
+app.get('/sales/lookup', authRequired, async (req, res, next) => {
+    try {
+        const receiptNumber = typeof req.query.receipt === 'string' ? req.query.receipt : undefined;
+        if (!receiptNumber)
+            return res.status(400).json({ message: 'Receipt number required' });
+        const sale = await prisma.sale.findUnique({
+            where: { receiptNumber },
+            include: { items: { include: { product: true } }, payments: true, customer: true, user: true, refunds: { include: { items: true } } }
+        });
+        if (!sale)
+            return res.status(404).json({ message: 'Receipt not found' });
+        res.json({ sale });
+    }
+    catch (error) {
+        next(error);
+    }
+});
+app.get('/sales/holds', authRequired, async (req, res, next) => {
+    try {
+        const user = req.user;
+        const holds = await prisma.heldTransaction.findMany({
+            where: user?.role === Role.CASHIER && user ? { cashierId: user.id } : undefined,
+            include: { cashier: true, sale: true },
+            orderBy: { updatedAt: 'desc' }
+        });
+        res.json({ holds });
+    }
+    catch (error) {
+        next(error);
+    }
+});
 app.get('/sales/:id', authRequired, async (req, res, next) => {
     try {
         const sale = await enrichSale(String(req.params.id));
@@ -571,20 +602,6 @@ app.get('/sales/:id/receipt.pdf', authRequired, async (req, res, next) => {
         next(error);
     }
 });
-app.get('/sales/holds', authRequired, async (req, res, next) => {
-    try {
-        const user = req.user;
-        const holds = await prisma.heldTransaction.findMany({
-            where: user?.role === Role.CASHIER && user ? { cashierId: user.id } : undefined,
-            include: { cashier: true, sale: true },
-            orderBy: { updatedAt: 'desc' }
-        });
-        res.json({ holds });
-    }
-    catch (error) {
-        next(error);
-    }
-});
 app.post('/sales/hold', authRequired, async (req, res, next) => {
     try {
         const payload = req.body;
@@ -621,18 +638,143 @@ app.post('/sales/checkout', authRequired, async (req, res, next) => {
         const items = body.items ?? [];
         if (!items.length)
             return res.status(400).json({ message: 'Cart is empty' });
-        const products = await prisma.product.findMany({ where: { id: { in: items.map((item) => item.productId) } }, include: { category: true } });
+        const products = await prisma.product.findMany({
+            where: { id: { in: items.map((item) => item.productId) } },
+            include: { category: true, taxCategory: true }
+        });
+        // Check age verification
+        const hasAgeRestrictedItem = products.some(p => p.ageRestricted && p.minAge > 0);
+        if (hasAgeRestrictedItem && !body.ageVerified) {
+            return res.status(400).json({ message: 'Age verification required for restricted items' });
+        }
         const subtotal = Number(items.reduce((sum, item) => {
             const product = products.find((entry) => entry.id === item.productId);
             return sum + (product ? toNumber(product.price) * item.quantity : 0);
         }, 0).toFixed(2));
+        // 1. Calculate manual discount
         const discountAmount = buildDiscount(subtotal, body.discountType, body.discountValue);
+        // 2. Calculate coupon discount
+        let coupon = null;
+        let couponDiscount = 0;
+        if (body.couponCode) {
+            coupon = await prisma.coupon.findUnique({
+                where: { code: body.couponCode.toUpperCase(), active: true }
+            });
+            if (!coupon) {
+                return res.status(400).json({ message: 'Invalid or inactive coupon code' });
+            }
+            const now = new Date();
+            if (coupon.validFrom > now || (coupon.validUntil && coupon.validUntil < now)) {
+                return res.status(400).json({ message: 'Coupon has expired or is not yet valid' });
+            }
+            if (coupon.maxUses != null && coupon.usedCount >= coupon.maxUses) {
+                return res.status(400).json({ message: 'Coupon has reached its maximum usage limit' });
+            }
+            if (subtotal < toNumber(coupon.minPurchase)) {
+                return res.status(400).json({ message: `Minimum purchase of ${money.format(toNumber(coupon.minPurchase))} required for this coupon` });
+            }
+            if (coupon.type === CouponType.PERCENT) {
+                couponDiscount = Number((subtotal * (toNumber(coupon.value) / 100)).toFixed(2));
+            }
+            else if (coupon.type === CouponType.FIXED) {
+                couponDiscount = Math.min(subtotal, toNumber(coupon.value));
+            }
+        }
+        // 3. Calculate auto-promotions
+        const now = new Date();
+        const promotions = await prisma.promotion.findMany({
+            where: { active: true, validFrom: { lte: now }, OR: [{ validUntil: null }, { validUntil: { gte: now } }] },
+            orderBy: { priority: 'desc' }
+        });
+        const promoItems = items.map(item => {
+            const product = products.find(p => p.id === item.productId);
+            return {
+                productId: item.productId,
+                categoryId: product?.categoryId ?? '',
+                quantity: item.quantity,
+                price: product ? toNumber(product.price) : 0
+            };
+        });
+        let promoDiscount = 0;
+        const appliedPromos = [];
+        for (const promo of promotions) {
+            const config = promo.config;
+            const applicableItems = promoItems.filter(item => (promo.productIds.length === 0 && promo.categoryIds.length === 0) ||
+                promo.productIds.includes(item.productId) ||
+                promo.categoryIds.includes(item.categoryId));
+            if (applicableItems.length === 0)
+                continue;
+            if (promo.type === PromotionType.PERCENT_OFF) {
+                const pct = Number(config.percent ?? 0);
+                const discount = applicableItems.reduce((sum, i) => sum + (i.price * i.quantity * pct / 100), 0);
+                if (discount > 0) {
+                    const roundedDiscount = Number(discount.toFixed(2));
+                    promoDiscount += roundedDiscount;
+                    appliedPromos.push({ promotionId: promo.id, discount: roundedDiscount, description: `${pct}% off` });
+                }
+            }
+            else if (promo.type === PromotionType.FIXED_OFF) {
+                const amt = Number(config.amount ?? 0);
+                if (amt > 0) {
+                    promoDiscount += amt;
+                    appliedPromos.push({ promotionId: promo.id, discount: amt, description: `$${amt} off` });
+                }
+            }
+            else if (promo.type === PromotionType.BOGO) {
+                const buyQty = Number(config.buy ?? 1);
+                const freeQty = Number(config.free ?? 1);
+                for (const item of applicableItems) {
+                    const sets = Math.floor(item.quantity / (buyQty + freeQty));
+                    if (sets > 0) {
+                        const discount = Number((sets * freeQty * item.price).toFixed(2));
+                        promoDiscount += discount;
+                        appliedPromos.push({ promotionId: promo.id, discount, description: `Buy ${buyQty} get ${freeQty} free` });
+                    }
+                }
+            }
+            else if (promo.type === PromotionType.MULTI_BUY) {
+                const minQty = Number(config.quantity ?? 2);
+                const fixedPrice = Number(config.price ?? 0);
+                for (const item of applicableItems) {
+                    if (item.quantity >= minQty && fixedPrice > 0) {
+                        const normalPrice = item.price * minQty;
+                        const discount = Number(Math.max(0, normalPrice - fixedPrice).toFixed(2));
+                        if (discount > 0) {
+                            promoDiscount += discount;
+                            appliedPromos.push({ promotionId: promo.id, discount, description: `${minQty} for $${fixedPrice}` });
+                        }
+                    }
+                }
+            }
+        }
+        // 4. Calculate loyalty discount
         const customer = body.customerId ? await prisma.customer.findUnique({ where: { id: body.customerId } }) : null;
-        const redeemable = customer ? Math.min(body.pointsToRedeem ?? 0, customer.loyaltyPoints, Math.floor(subtotal - discountAmount)) : 0;
-        const total = Math.max(0, Number((subtotal - discountAmount - redeemable).toFixed(2)));
+        const remainingAfterDiscounts = Math.max(0, subtotal - discountAmount - couponDiscount - promoDiscount);
+        const redeemable = customer ? Math.min(body.pointsToRedeem ?? 0, customer.loyaltyPoints, Math.floor(remainingAfterDiscounts)) : 0;
+        const total = Math.max(0, Number((remainingAfterDiscounts - redeemable).toFixed(2)));
+        // 5. Calculate taxes (inclusive VAT)
+        let totalTaxAmount = 0;
+        const saleItemsWithTax = items.map((cartItem) => {
+            const product = products.find((entry) => entry.id === cartItem.productId);
+            const rate = product.taxCategory ? toNumber(product.taxCategory.rate) : 0;
+            const lineTotal = Number((toNumber(product.price) * cartItem.quantity).toFixed(2));
+            const lineTax = Number((lineTotal * rate / (1 + rate)).toFixed(2));
+            totalTaxAmount += lineTax;
+            return {
+                productId: product.id,
+                productName: product.name,
+                sku: product.sku,
+                quantity: cartItem.quantity,
+                unitPrice: product.price,
+                costPrice: product.costPrice,
+                taxAmount: lineTax,
+                lineTotal
+            };
+        });
         const payments = (body.payments?.length ? body.payments : [{ method: PaymentMethod.CASH, amount: total }]).map((payment) => ({
             method: payment.method,
-            amount: Number(payment.amount)
+            amount: Number(payment.amount),
+            reference: payment.reference
         }));
         const paidAmount = Number(payments.reduce((sum, payment) => sum + payment.amount, 0).toFixed(2));
         const changeAmount = Math.max(0, Number((paidAmount - total).toFixed(2)));
@@ -654,27 +796,26 @@ app.post('/sales/checkout', authRequired, async (req, res, next) => {
                     discountType: body.discountType,
                     discountValue: body.discountValue ? new Prisma.Decimal(body.discountValue) : null,
                     discountAmount,
+                    couponId: coupon?.id,
+                    couponDiscount,
+                    taxAmount: totalTaxAmount,
                     total,
                     amountPaid: paidAmount,
                     changeAmount,
                     pointsEarned: customer ? pointsEarnedFromTotal(total) : 0,
                     pointsRedeemed: redeemable,
                     items: {
-                        create: items.map((cartItem) => {
-                            const product = products.find((entry) => entry.id === cartItem.productId);
-                            return {
-                                productId: product.id,
-                                productName: product.name,
-                                sku: product.sku,
-                                quantity: cartItem.quantity,
-                                unitPrice: product.price,
-                                costPrice: product.costPrice,
-                                lineTotal: Number((toNumber(product.price) * cartItem.quantity).toFixed(2))
-                            };
-                        })
+                        create: saleItemsWithTax
                     },
                     payments: {
                         create: payments
+                    },
+                    appliedPromotions: {
+                        create: appliedPromos.map(ap => ({
+                            promotionId: ap.promotionId,
+                            discount: ap.discount,
+                            description: ap.description
+                        }))
                     }
                 },
                 include: { items: true, payments: true }
@@ -689,6 +830,12 @@ app.post('/sales/checkout', authRequired, async (req, res, next) => {
                         reference: createdSale.receiptNumber,
                         createdById: req.user.id
                     }
+                });
+            }
+            if (coupon) {
+                await tx.coupon.update({
+                    where: { id: coupon.id },
+                    data: { usedCount: { increment: 1 } }
                 });
             }
             if (body.customerId) {
@@ -832,6 +979,523 @@ app.get('/cashier/sessions', authRequired, requireRole(Role.ADMIN), async (_req,
     try {
         const sessions = await prisma.cashierSession.findMany({ include: { user: true }, where: { active: true }, orderBy: { startedAt: 'desc' } });
         res.json({ sessions });
+    }
+    catch (error) {
+        next(error);
+    }
+});
+// ────────────────────────────────────────────────
+// VOID SALE
+// ────────────────────────────────────────────────
+app.post('/sales/:id/void', authRequired, async (req, res, next) => {
+    try {
+        const id = String(req.params.id);
+        const { pin } = req.body;
+        if (req.user?.role !== Role.ADMIN) {
+            if (!pin)
+                return res.status(400).json({ message: 'Manager PIN override required' });
+            const managers = await prisma.user.findMany({ where: { role: Role.ADMIN, active: true, pin: { not: null } } });
+            let pinValid = false;
+            for (const m of managers) {
+                if (m.pin && await bcrypt.compare(pin, m.pin)) {
+                    pinValid = true;
+                    break;
+                }
+            }
+            if (!pinValid)
+                return res.status(401).json({ message: 'Invalid manager PIN' });
+        }
+        const sale = await prisma.sale.findUnique({ where: { id }, include: { items: true } });
+        if (!sale)
+            return res.status(404).json({ message: 'Sale not found' });
+        if (sale.status !== SaleStatus.COMPLETED)
+            return res.status(400).json({ message: 'Only completed sales can be voided' });
+        await prisma.$transaction(async (tx) => {
+            await tx.sale.update({ where: { id }, data: { status: SaleStatus.VOIDED } });
+            for (const item of sale.items) {
+                await tx.product.update({ where: { id: item.productId }, data: { stockQuantity: { increment: item.quantity } } });
+                await tx.inventoryMovement.create({
+                    data: { productId: item.productId, type: InventoryMovementType.ADJUSTMENT, quantity: item.quantity, reference: `VOID:${sale.receiptNumber}`, createdById: req.user.id }
+                });
+            }
+        });
+        await logActivity(req.user?.id, 'sale.void', 'sale', id, { receiptNumber: sale.receiptNumber });
+        const updated = await enrichSale(id);
+        res.json({ sale: updated });
+    }
+    catch (error) {
+        next(error);
+    }
+});
+// ────────────────────────────────────────────────
+// VOID SINGLE LINE ITEM
+// ────────────────────────────────────────────────
+app.post('/sales/:saleId/items/:itemId/void', authRequired, async (req, res, next) => {
+    try {
+        const { saleId, itemId } = req.params;
+        const { pin } = req.body;
+        if (req.user?.role !== Role.ADMIN) {
+            if (!pin)
+                return res.status(400).json({ message: 'Manager PIN override required' });
+            const managers = await prisma.user.findMany({ where: { role: Role.ADMIN, active: true, pin: { not: null } } });
+            let pinValid = false;
+            for (const m of managers) {
+                if (m.pin && await bcrypt.compare(pin, m.pin)) {
+                    pinValid = true;
+                    break;
+                }
+            }
+            if (!pinValid)
+                return res.status(401).json({ message: 'Invalid manager PIN' });
+        }
+        const sale = await prisma.sale.findUnique({ where: { id: String(saleId) }, include: { items: true, payments: true } });
+        if (!sale)
+            return res.status(404).json({ message: 'Sale not found' });
+        if (sale.status !== SaleStatus.COMPLETED)
+            return res.status(400).json({ message: 'Cannot void items on non-completed sales' });
+        const item = sale.items.find(i => i.id === String(itemId));
+        if (!item)
+            return res.status(404).json({ message: 'Item not found' });
+        if (item.voided)
+            return res.status(400).json({ message: 'Item already voided' });
+        await prisma.$transaction(async (tx) => {
+            await tx.saleItem.update({ where: { id: item.id }, data: { voided: true } });
+            const newSubtotal = sale.items.filter(i => i.id !== item.id && !i.voided).reduce((sum, i) => sum + toNumber(i.lineTotal), 0);
+            const newTotal = Math.max(0, newSubtotal - toNumber(sale.discountAmount));
+            await tx.sale.update({ where: { id: String(saleId) }, data: { subtotal: newSubtotal, total: newTotal } });
+            await tx.product.update({ where: { id: item.productId }, data: { stockQuantity: { increment: item.quantity } } });
+        });
+        await logActivity(req.user?.id, 'sale.voidItem', 'saleItem', item.id, { productName: item.productName });
+        const updated = await enrichSale(String(saleId));
+        res.json({ sale: updated });
+    }
+    catch (error) {
+        next(error);
+    }
+});
+// ────────────────────────────────────────────────
+// REFUND
+// ────────────────────────────────────────────────
+app.post('/sales/:id/refund', authRequired, async (req, res, next) => {
+    try {
+        const id = String(req.params.id);
+        const { items, reason, pin } = req.body;
+        if (req.user?.role !== Role.ADMIN) {
+            if (!pin)
+                return res.status(400).json({ message: 'Manager PIN override required' });
+            const managers = await prisma.user.findMany({ where: { role: Role.ADMIN, active: true, pin: { not: null } } });
+            let pinValid = false;
+            for (const m of managers) {
+                if (m.pin && await bcrypt.compare(pin, m.pin)) {
+                    pinValid = true;
+                    break;
+                }
+            }
+            if (!pinValid)
+                return res.status(401).json({ message: 'Invalid manager PIN' });
+        }
+        if (!items?.length)
+            return res.status(400).json({ message: 'No items to refund' });
+        const sale = await prisma.sale.findUnique({ where: { id }, include: { items: true } });
+        if (!sale)
+            return res.status(404).json({ message: 'Sale not found' });
+        if (sale.status === SaleStatus.VOIDED)
+            return res.status(400).json({ message: 'Cannot refund a voided sale' });
+        const refund = await prisma.$transaction(async (tx) => {
+            let totalRefundAmount = 0;
+            const refundItems = [];
+            for (const refundReq of items) {
+                const saleItem = sale.items.find(i => i.productId === refundReq.productId && !i.voided);
+                if (!saleItem)
+                    continue;
+                const qty = Math.min(refundReq.quantity, saleItem.quantity);
+                const amount = Number((toNumber(saleItem.unitPrice) * qty).toFixed(2));
+                totalRefundAmount += amount;
+                refundItems.push({ productId: refundReq.productId, quantity: qty, amount });
+                await tx.product.update({ where: { id: refundReq.productId }, data: { stockQuantity: { increment: qty } } });
+                await tx.inventoryMovement.create({
+                    data: { productId: refundReq.productId, type: InventoryMovementType.REFUND, quantity: qty, reference: `REFUND:${sale.receiptNumber}`, createdById: req.user.id }
+                });
+            }
+            const r = await tx.refund.create({
+                data: {
+                    originalSaleId: id,
+                    reason,
+                    amount: totalRefundAmount,
+                    createdById: req.user.id,
+                    items: { create: refundItems }
+                },
+                include: { items: true }
+            });
+            if (totalRefundAmount >= toNumber(sale.total)) {
+                await tx.sale.update({ where: { id }, data: { status: SaleStatus.REFUNDED } });
+            }
+            return r;
+        });
+        await logActivity(req.user?.id, 'sale.refund', 'refund', refund.id, { saleId: id, amount: toNumber(refund.amount) });
+        res.status(201).json({ refund });
+    }
+    catch (error) {
+        next(error);
+    }
+});
+// ────────────────────────────────────────────────
+// COUPONS
+// ────────────────────────────────────────────────
+app.get('/coupons', authRequired, requireRole(Role.ADMIN), async (_req, res, next) => {
+    try {
+        const coupons = await prisma.coupon.findMany({ orderBy: { createdAt: 'desc' } });
+        res.json({ coupons });
+    }
+    catch (error) {
+        next(error);
+    }
+});
+app.post('/coupons', authRequired, requireRole(Role.ADMIN), async (req, res, next) => {
+    try {
+        const { code, type, value, minPurchase, maxUses, validFrom, validUntil } = req.body;
+        if (!code || !type || value == null)
+            return res.status(400).json({ message: 'Code, type, and value are required' });
+        const coupon = await prisma.coupon.create({
+            data: {
+                code: code.toUpperCase(),
+                type: type,
+                value,
+                minPurchase: minPurchase ?? 0,
+                maxUses,
+                validFrom: validFrom ? new Date(validFrom) : new Date(),
+                validUntil: validUntil ? new Date(validUntil) : null
+            }
+        });
+        await logActivity(req.user?.id, 'coupon.create', 'coupon', coupon.id, { code: coupon.code });
+        res.status(201).json({ coupon });
+    }
+    catch (error) {
+        next(error);
+    }
+});
+app.post('/coupons/validate', authRequired, async (req, res, next) => {
+    try {
+        const { code, subtotal } = req.body;
+        if (!code)
+            return res.status(400).json({ valid: false, message: 'Coupon code required' });
+        const coupon = await prisma.coupon.findUnique({ where: { code: code.toUpperCase() } });
+        if (!coupon || !coupon.active)
+            return res.json({ valid: false, message: 'Coupon not found or inactive' });
+        const now = new Date();
+        if (now < coupon.validFrom)
+            return res.json({ valid: false, message: 'Coupon not yet valid' });
+        if (coupon.validUntil && now > coupon.validUntil)
+            return res.json({ valid: false, message: 'Coupon expired' });
+        if (coupon.maxUses && coupon.usedCount >= coupon.maxUses)
+            return res.json({ valid: false, message: 'Coupon usage limit reached' });
+        if (subtotal < toNumber(coupon.minPurchase))
+            return res.json({ valid: false, message: `Minimum purchase of ${money.format(toNumber(coupon.minPurchase))} required` });
+        let discount = 0;
+        if (coupon.type === CouponType.PERCENT) {
+            discount = Number((subtotal * (toNumber(coupon.value) / 100)).toFixed(2));
+        }
+        else if (coupon.type === CouponType.FIXED) {
+            discount = Math.min(subtotal, toNumber(coupon.value));
+        }
+        res.json({ valid: true, coupon, discount });
+    }
+    catch (error) {
+        next(error);
+    }
+});
+// ────────────────────────────────────────────────
+// PROMOTIONS
+// ────────────────────────────────────────────────
+app.get('/promotions', authRequired, async (_req, res, next) => {
+    try {
+        const now = new Date();
+        const promotions = await prisma.promotion.findMany({
+            where: { active: true, validFrom: { lte: now }, OR: [{ validUntil: null }, { validUntil: { gte: now } }] },
+            orderBy: { priority: 'desc' }
+        });
+        res.json({ promotions });
+    }
+    catch (error) {
+        next(error);
+    }
+});
+app.post('/promotions', authRequired, requireRole(Role.ADMIN), async (req, res, next) => {
+    try {
+        const { name, type, config, productIds, categoryIds, validFrom, validUntil, priority } = req.body;
+        if (!name || !type || !config)
+            return res.status(400).json({ message: 'Name, type, and config required' });
+        const promotion = await prisma.promotion.create({
+            data: {
+                name, type: type, config: config,
+                productIds: productIds ?? [], categoryIds: categoryIds ?? [],
+                validFrom: validFrom ? new Date(validFrom) : new Date(),
+                validUntil: validUntil ? new Date(validUntil) : null,
+                priority: priority ?? 0
+            }
+        });
+        await logActivity(req.user?.id, 'promotion.create', 'promotion', promotion.id, { name });
+        res.status(201).json({ promotion });
+    }
+    catch (error) {
+        next(error);
+    }
+});
+app.post('/promotions/match', authRequired, async (req, res, next) => {
+    try {
+        const { items } = req.body;
+        if (!items?.length)
+            return res.json({ matches: [] });
+        const now = new Date();
+        const promotions = await prisma.promotion.findMany({
+            where: { active: true, validFrom: { lte: now }, OR: [{ validUntil: null }, { validUntil: { gte: now } }] },
+            orderBy: { priority: 'desc' }
+        });
+        const matches = [];
+        for (const promo of promotions) {
+            const config = promo.config;
+            const applicableItems = items.filter(item => (promo.productIds.length === 0 && promo.categoryIds.length === 0) ||
+                promo.productIds.includes(item.productId) ||
+                promo.categoryIds.includes(item.categoryId));
+            if (applicableItems.length === 0)
+                continue;
+            if (promo.type === PromotionType.PERCENT_OFF) {
+                const pct = Number(config.percent ?? 0);
+                const discount = applicableItems.reduce((sum, i) => sum + (i.price * i.quantity * pct / 100), 0);
+                if (discount > 0) {
+                    matches.push({ promotionId: promo.id, name: promo.name, type: promo.type, discount: Number(discount.toFixed(2)), description: `${pct}% off`, affectedItems: applicableItems.map(i => i.productId) });
+                }
+            }
+            else if (promo.type === PromotionType.FIXED_OFF) {
+                const amt = Number(config.amount ?? 0);
+                if (amt > 0) {
+                    matches.push({ promotionId: promo.id, name: promo.name, type: promo.type, discount: amt, description: `${money.format(amt)} off`, affectedItems: applicableItems.map(i => i.productId) });
+                }
+            }
+            else if (promo.type === PromotionType.BOGO) {
+                const buyQty = Number(config.buy ?? 1);
+                const freeQty = Number(config.free ?? 1);
+                for (const item of applicableItems) {
+                    const sets = Math.floor(item.quantity / (buyQty + freeQty));
+                    if (sets > 0) {
+                        const discount = Number((sets * freeQty * item.price).toFixed(2));
+                        matches.push({ promotionId: promo.id, name: promo.name, type: promo.type, discount, description: `Buy ${buyQty} get ${freeQty} free`, affectedItems: [item.productId] });
+                    }
+                }
+            }
+            else if (promo.type === PromotionType.MULTI_BUY) {
+                const minQty = Number(config.quantity ?? 2);
+                const fixedPrice = Number(config.price ?? 0);
+                for (const item of applicableItems) {
+                    if (item.quantity >= minQty && fixedPrice > 0) {
+                        const normalPrice = item.price * minQty;
+                        const discount = Number(Math.max(0, normalPrice - fixedPrice).toFixed(2));
+                        if (discount > 0) {
+                            matches.push({ promotionId: promo.id, name: promo.name, type: promo.type, discount, description: `${minQty} for ${money.format(fixedPrice)}`, affectedItems: [item.productId] });
+                        }
+                    }
+                }
+            }
+        }
+        res.json({ matches });
+    }
+    catch (error) {
+        next(error);
+    }
+});
+// ────────────────────────────────────────────────
+// PIN VERIFICATION
+// ────────────────────────────────────────────────
+app.post('/auth/verify-pin', authRequired, async (req, res, next) => {
+    try {
+        const { pin } = req.body;
+        if (!pin)
+            return res.status(400).json({ valid: false, message: 'PIN required' });
+        const managers = await prisma.user.findMany({
+            where: { role: { in: [Role.ADMIN] }, active: true, pin: { not: null } }
+        });
+        for (const manager of managers) {
+            if (manager.pin && await bcrypt.compare(pin, manager.pin)) {
+                await logActivity(manager.id, 'auth.pinVerify', 'user', manager.id, { verifiedFor: 'override' });
+                return res.json({ valid: true, manager: { id: manager.id, name: manager.name, role: manager.role } });
+            }
+        }
+        res.json({ valid: false, message: 'Invalid PIN' });
+    }
+    catch (error) {
+        next(error);
+    }
+});
+// ────────────────────────────────────────────────
+// TAX CATEGORIES
+// ────────────────────────────────────────────────
+app.get('/tax-categories', authRequired, async (_req, res, next) => {
+    try {
+        const categories = await prisma.taxCategory.findMany({ orderBy: { name: 'asc' } });
+        res.json({ categories });
+    }
+    catch (error) {
+        next(error);
+    }
+});
+app.post('/tax-categories', authRequired, requireRole(Role.ADMIN), async (req, res, next) => {
+    try {
+        const { name, rate } = req.body;
+        if (!name || rate == null)
+            return res.status(400).json({ message: 'Name and rate required' });
+        const category = await prisma.taxCategory.create({ data: { name, rate } });
+        await logActivity(req.user?.id, 'taxCategory.create', 'taxCategory', category.id, { name, rate });
+        res.status(201).json({ category });
+    }
+    catch (error) {
+        next(error);
+    }
+});
+// ────────────────────────────────────────────────
+// CASH DRAWER
+// ────────────────────────────────────────────────
+app.get('/cashier/drawer', authRequired, async (req, res, next) => {
+    try {
+        const drawer = await prisma.cashDrawer.findFirst({
+            where: { userId: req.user.id, status: DrawerStatus.OPEN },
+            include: { movements: { orderBy: { createdAt: 'desc' } } }
+        });
+        res.json({ drawer });
+    }
+    catch (error) {
+        next(error);
+    }
+});
+app.post('/cashier/drawer/open', authRequired, async (req, res, next) => {
+    try {
+        const { openingFloat } = req.body;
+        if (openingFloat == null)
+            return res.status(400).json({ message: 'Opening float required' });
+        const existing = await prisma.cashDrawer.findFirst({ where: { userId: req.user.id, status: DrawerStatus.OPEN } });
+        if (existing)
+            return res.status(400).json({ message: 'Drawer already open' });
+        const drawer = await prisma.cashDrawer.create({
+            data: { userId: req.user.id, openingFloat }
+        });
+        await logActivity(req.user?.id, 'drawer.open', 'cashDrawer', drawer.id, { openingFloat });
+        res.status(201).json({ drawer });
+    }
+    catch (error) {
+        next(error);
+    }
+});
+app.post('/cashier/drawer/cash-in', authRequired, async (req, res, next) => {
+    try {
+        const { amount, reason } = req.body;
+        if (!amount || amount <= 0)
+            return res.status(400).json({ message: 'Amount required' });
+        const drawer = await prisma.cashDrawer.findFirst({ where: { userId: req.user.id, status: DrawerStatus.OPEN } });
+        if (!drawer)
+            return res.status(400).json({ message: 'No open drawer' });
+        const movement = await prisma.cashMovement.create({
+            data: { drawerId: drawer.id, type: CashMovementType.CASH_IN, amount, reason, createdById: req.user.id }
+        });
+        await logActivity(req.user?.id, 'drawer.cashIn', 'cashMovement', movement.id, { amount, reason });
+        res.status(201).json({ movement });
+    }
+    catch (error) {
+        next(error);
+    }
+});
+app.post('/cashier/drawer/cash-out', authRequired, async (req, res, next) => {
+    try {
+        const { amount, reason } = req.body;
+        if (!amount || amount <= 0)
+            return res.status(400).json({ message: 'Amount required' });
+        const drawer = await prisma.cashDrawer.findFirst({ where: { userId: req.user.id, status: DrawerStatus.OPEN } });
+        if (!drawer)
+            return res.status(400).json({ message: 'No open drawer' });
+        const movement = await prisma.cashMovement.create({
+            data: { drawerId: drawer.id, type: CashMovementType.CASH_OUT, amount, reason, createdById: req.user.id }
+        });
+        await logActivity(req.user?.id, 'drawer.cashOut', 'cashMovement', movement.id, { amount, reason });
+        res.status(201).json({ movement });
+    }
+    catch (error) {
+        next(error);
+    }
+});
+app.post('/cashier/drawer/close', authRequired, async (req, res, next) => {
+    try {
+        const { closingFloat } = req.body;
+        if (closingFloat == null)
+            return res.status(400).json({ message: 'Closing float required' });
+        const drawer = await prisma.cashDrawer.findFirst({
+            where: { userId: req.user.id, status: DrawerStatus.OPEN },
+            include: { movements: true }
+        });
+        if (!drawer)
+            return res.status(400).json({ message: 'No open drawer' });
+        const updated = await prisma.cashDrawer.update({
+            where: { id: drawer.id },
+            data: { status: DrawerStatus.CLOSED, closingFloat, closedAt: new Date() },
+            include: { movements: true }
+        });
+        await logActivity(req.user?.id, 'drawer.close', 'cashDrawer', drawer.id, { closingFloat });
+        res.json({ drawer: updated });
+    }
+    catch (error) {
+        next(error);
+    }
+});
+// ────────────────────────────────────────────────
+// Z-REPORT
+// ────────────────────────────────────────────────
+app.get('/cashier/z-report', authRequired, async (req, res, next) => {
+    try {
+        const drawer = await prisma.cashDrawer.findFirst({
+            where: { userId: req.user.id },
+            orderBy: { openedAt: 'desc' },
+            include: { movements: true, user: true }
+        });
+        if (!drawer)
+            return res.status(404).json({ message: 'No drawer session found' });
+        const sessionStart = drawer.openedAt;
+        const sessionEnd = drawer.closedAt ?? new Date();
+        const sales = await prisma.sale.findMany({
+            where: { userId: req.user.id, createdAt: { gte: sessionStart, lte: sessionEnd }, status: SaleStatus.COMPLETED },
+            include: { payments: true }
+        });
+        const refunds = await prisma.refund.findMany({
+            where: { createdById: req.user.id, createdAt: { gte: sessionStart, lte: sessionEnd } }
+        });
+        const voidedSales = await prisma.sale.findMany({
+            where: { userId: req.user.id, updatedAt: { gte: sessionStart, lte: sessionEnd }, status: SaleStatus.VOIDED }
+        });
+        const totalSales = sales.reduce((sum, s) => sum + toNumber(s.total), 0);
+        const cashSales = sales.reduce((sum, s) => sum + s.payments.filter(p => p.method === PaymentMethod.CASH).reduce((ps, p) => ps + toNumber(p.amount), 0), 0);
+        const cardSales = sales.reduce((sum, s) => sum + s.payments.filter(p => p.method === PaymentMethod.CARD).reduce((ps, p) => ps + toNumber(p.amount), 0), 0);
+        const totalRefunds = refunds.reduce((sum, r) => sum + toNumber(r.amount), 0);
+        const totalVoids = voidedSales.reduce((sum, s) => sum + toNumber(s.total), 0);
+        const cashIn = drawer.movements.filter(m => m.type === CashMovementType.CASH_IN).reduce((sum, m) => sum + toNumber(m.amount), 0);
+        const cashOut = drawer.movements.filter(m => m.type === CashMovementType.CASH_OUT).reduce((sum, m) => sum + toNumber(m.amount), 0);
+        const openingFloat = toNumber(drawer.openingFloat);
+        const expectedCash = openingFloat + cashSales - totalRefunds + cashIn - cashOut;
+        const closingFloat = drawer.closingFloat ? toNumber(drawer.closingFloat) : undefined;
+        res.json({
+            sessionStart: sessionStart.toISOString(),
+            sessionEnd: sessionEnd.toISOString(),
+            cashier: drawer.user.name,
+            openingFloat,
+            totalSales: Number(totalSales.toFixed(2)),
+            salesCount: sales.length,
+            cashSales: Number(cashSales.toFixed(2)),
+            cardSales: Number(cardSales.toFixed(2)),
+            totalRefunds: Number(totalRefunds.toFixed(2)),
+            refundsCount: refunds.length,
+            totalVoids: Number(totalVoids.toFixed(2)),
+            voidsCount: voidedSales.length,
+            cashIn: Number(cashIn.toFixed(2)),
+            cashOut: Number(cashOut.toFixed(2)),
+            expectedCash: Number(expectedCash.toFixed(2)),
+            closingFloat,
+            difference: closingFloat != null ? Number((closingFloat - expectedCash).toFixed(2)) : undefined
+        });
     }
     catch (error) {
         next(error);
