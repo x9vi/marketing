@@ -8,9 +8,9 @@ export function toNumber(value: unknown) {
 }
 
 export function currencyFormatter(currencyCode: string) {
-  return new Intl.NumberFormat('en-US', {
+  return new Intl.NumberFormat('ar-IQ', {
     style: 'currency',
     currency: currencyCode,
-    maximumFractionDigits: 2
+    maximumFractionDigits: 0
   });
 }

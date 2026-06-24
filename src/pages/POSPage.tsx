@@ -4,6 +4,9 @@ import type { Customer, Hold, PaymentMethod, Product, Sale, DiscountType, CashDr
 import { formatCurrency, formatDate } from '../lib/format.js';
 import { useAuth } from '../context/AuthContext.js';
 import { Link } from 'react-router-dom';
+import { InlineCashPanel } from '../components/InlineCashPanel.js';
+import { InlineCardPanel } from '../components/InlineCardPanel.js';
+import { InlineSplitPanel } from '../components/InlineSplitPanel.js';
 
 type CartItem = {
   product: Product;
@@ -359,10 +362,10 @@ const printReceipt = (sale: any, lang: 'en' | 'ku', testMode: boolean, triggerTo
       <tr>
         <td style="padding: 4px 0; font-size: 12px; font-family: ${isRtl ? 'monospace' : 'monospace'}; text-align: ${isRtl ? 'right' : 'left'};">
           ${localizedName}<br/>
-          <span style="font-size: 11px; color: #444;">${item.quantity} x $${Number(item.unitPrice).toFixed(2)}</span>
+          <span style="font-size: 11px; color: #444;">${item.quantity} x ${Number(item.unitPrice).toLocaleString('ar-IQ')} IQD</span>
         </td>
         <td style="text-align: ${isRtl ? 'left' : 'right'}; vertical-align: bottom; padding: 4px 0; font-size: 12px;">
-          $${Number(item.lineTotal).toFixed(2)}
+          ${Number(item.lineTotal).toLocaleString('ar-IQ')} IQD
         </td>
       </tr>
     `;
@@ -371,7 +374,7 @@ const printReceipt = (sale: any, lang: 'en' | 'ku', testMode: boolean, triggerTo
   const paymentsHtml = (sale.payments || []).map((p: any) => `
     <div style="display: flex; justify-content: space-between; font-size: 11px; margin-top: 2px; direction: ${isRtl ? 'rtl' : 'ltr'};">
       <span>${t.paid} (${p.method === 'CASH' ? t.cash : t.card}):</span>
-      <span>$${Number(p.amount).toFixed(2)}</span>
+      <span>${Number(p.amount).toLocaleString('ar-IQ')} IQD</span>
     </div>
   `).join('');
 
@@ -430,29 +433,29 @@ const printReceipt = (sale: any, lang: 'en' | 'ku', testMode: boolean, triggerTo
         <div class="divider"></div>
         <div style="display: flex; justify-content: space-between;" class="bold">
           <span>${t.subtotal}:</span>
-          <span>$${Number(sale.subtotal).toFixed(2)}</span>
+          <span>${Number(sale.subtotal).toLocaleString('ar-IQ')} IQD</span>
         </div>
         ${Number(sale.discountAmount) > 0 ? `
         <div style="display: flex; justify-content: space-between;">
           <span>${t.discount}:</span>
-          <span>-$${Number(sale.discountAmount).toFixed(2)}</span>
+          <span>-${Number(sale.discountAmount).toLocaleString('ar-IQ')} IQD</span>
         </div>
         ` : ''}
         ${Number(sale.couponDiscount) > 0 ? `
         <div style="display: flex; justify-content: space-between;">
           <span>${t.coupon}:</span>
-          <span>-$${Number(sale.couponDiscount).toFixed(2)}</span>
+          <span>-${Number(sale.couponDiscount).toLocaleString('ar-IQ')} IQD</span>
         </div>
         ` : ''}
         <div style="display: flex; justify-content: space-between;" class="bold">
           <span>${t.total}:</span>
-          <span>$${Number(sale.total).toFixed(2)}</span>
+          <span>${Number(sale.total).toLocaleString('ar-IQ')} IQD</span>
         </div>
         <div class="divider"></div>
         ${paymentsHtml}
         <div style="display: flex; justify-content: space-between; font-weight: bold; margin-top: 2px;">
           <span>${t.changeDue}:</span>
-          <span>$${Number(sale.changeAmount).toFixed(2)}</span>
+          <span>${Number(sale.changeAmount).toLocaleString('ar-IQ')} IQD</span>
         </div>
         ${sale.pointsEarned ? `
         <div style="display: flex; justify-content: space-between; font-size: 11px; margin-top: 4px;">
@@ -545,8 +548,11 @@ export function POSPage() {
 
   // Active Modals
   const [activeModal, setActiveModal] = useState<
-    'none' | 'pin' | 'age' | 'coupon' | 'refund' | 'drawer' | 'zreport' | 'holds' | 'weight' | 'split_pay'
+    'none' | 'pin' | 'age' | 'coupon' | 'refund' | 'drawer' | 'zreport' | 'holds' | 'weight'
   >('none');
+
+  // Checkout panel view: which inline payment panel is visible
+  const [checkoutView, setCheckoutView] = useState<'menu' | 'cash' | 'card' | 'split'>('menu');
 
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -570,7 +576,7 @@ export function POSPage() {
   const [refundSuccessPdf, setRefundSuccessPdf] = useState<string | null>(null);
 
   // Drawer inputs
-  const [drawerFloatInput, setDrawerFloatInput] = useState('100.00');
+  const [drawerFloatInput, setDrawerFloatInput] = useState('100000');
   const [cashMovementAmount, setCashMovementAmount] = useState('');
   const [cashMovementReason, setCashMovementReason] = useState('');
   const [zReportData, setZReportData] = useState<ZReport | null>(null);
@@ -910,6 +916,7 @@ export function POSPage() {
     setCashAmount('0');
     setCardAmount('0');
     setPayments([]);
+    setCheckoutView('menu');
   };
 
   // Modals callbacks
@@ -964,6 +971,43 @@ export function POSPage() {
     }
   };
 
+  // Inline cash payment confirm handler
+  const handleInlineCashConfirm = (receivedAmount: number, changeAmount: number) => {
+    if (!cart.length) return;
+    const checkoutPayments: { method: PaymentMethod; amount: number }[] = [
+      { method: 'CASH', amount: total },
+    ];
+    setPayments(checkoutPayments);
+    setCashAmount(String(receivedAmount));
+    setCheckoutView('menu');
+    void runCheckout(checkoutPayments);
+    if (changeAmount > 0) {
+      showNotification(`💵 ${t.changeDue}: ${formatCurrency(changeAmount)}`, 'info');
+    }
+  };
+
+  // Inline card payment confirm handler
+  const handleInlineCardConfirm = () => {
+    if (!cart.length) return;
+    const checkoutPayments: { method: PaymentMethod; amount: number }[] = [
+      { method: 'CARD', amount: total },
+    ];
+    setPayments(checkoutPayments);
+    setCheckoutView('menu');
+    void runCheckout(checkoutPayments);
+  };
+
+  // Inline split payment confirm handler
+  const handleInlineSplitConfirm = (cashAmt: number, cardAmt: number) => {
+    if (!cart.length) return;
+    const list: { method: PaymentMethod; amount: number }[] = [];
+    if (cashAmt > 0) list.push({ method: 'CASH', amount: cashAmt });
+    if (cardAmt > 0) list.push({ method: 'CARD', amount: cardAmt });
+    setPayments(list);
+    setCheckoutView('menu');
+    void runCheckout(list);
+  };
+
   const triggerCheckout = (isCash: boolean) => {
     if (!cart.length) return;
     const checkoutAmount = total;
@@ -971,21 +1015,8 @@ export function POSPage() {
       setPayments([{ method: 'CASH', amount: checkoutAmount }]);
       void runCheckout([{ method: 'CASH', amount: checkoutAmount }]);
     } else {
-      setPayments([{ method: 'CARD', amount: checkoutAmount }]);
-      setPaymentStep('terminal_connecting');
-      setActiveModal('split_pay');
-      setTimeout(() => {
-        setPaymentStep('terminal_tap');
-        setTimeout(() => {
-          setPaymentStep('terminal_approving');
-          setTimeout(() => {
-            setPaymentStep('terminal_approved');
-            setTimeout(() => {
-              void runCheckout([{ method: 'CARD', amount: checkoutAmount }]);
-            }, 1000);
-          }, 1500);
-        }, 1500);
-      }, 1000);
+      // Card-only quick checkout — via inline card panel
+      setCheckoutView('card');
     }
   };
 
@@ -1028,40 +1059,9 @@ export function POSPage() {
     }
   };
 
+  // Legacy split handler kept for any keyboard shortcut paths
   const handleSplitCheckoutSubmit = () => {
-    const list: { method: PaymentMethod; amount: number }[] = [];
-    if (plannedCash > 0) list.push({ method: 'CASH', amount: plannedCash });
-    if (plannedCard > 0) list.push({ method: 'CARD', amount: plannedCard });
-
-    if (list.length === 0) {
-      showNotification(t.enterPaymentAmount, 'error');
-      return;
-    }
-
-    const paySum = list.reduce((s, p) => s + p.amount, 0);
-    if (paySum < total) {
-      showNotification(`${t.paymentLessThanDue} (${formatCurrency(paySum)} / ${formatCurrency(total)})`, 'error');
-      return;
-    }
-
-    setPayments(list);
-    if (plannedCard > 0) {
-      setPaymentStep('terminal_connecting');
-      setTimeout(() => {
-        setPaymentStep('terminal_tap');
-        setTimeout(() => {
-          setPaymentStep('terminal_approving');
-          setTimeout(() => {
-            setPaymentStep('terminal_approved');
-            setTimeout(() => {
-              void runCheckout(list);
-            }, 1000);
-          }, 1500);
-        }, 1500);
-      }, 1000);
-    } else {
-      void runCheckout(list);
-    }
+    setCheckoutView('split');
   };
 
   // Hold Baskets
@@ -1239,8 +1239,8 @@ export function POSPage() {
       dir={isRtl ? 'rtl' : 'ltr'}
     >
       {/* 1. PROFESSIONAL CASHIER TILL HEADER */}
-      <header className="flex h-16 items-center justify-between rounded-xl bg-slate-900 border border-white/10 px-4 shadow-[0_4px_20px_rgba(0,0,0,0.4)] flex-shrink-0">
-        <div className="flex items-center gap-4">
+      <header className="flex h-16 items-center justify-between flex-row rounded-xl bg-slate-900 border border-white/10 px-4 shadow-[0_4px_20px_rgba(0,0,0,0.4)] flex-shrink-0">
+        <div className="flex flex-row items-center gap-4">
           <div className="flex items-center gap-3">
             <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-tr from-gold-600 to-gold-400 text-slate-950 text-xl font-black shadow-[0_0_12px_rgba(232,184,79,0.3)]">
               🛒
@@ -1263,7 +1263,7 @@ export function POSPage() {
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-row items-center gap-3">
           {/* Language Switcher */}
           <div className="flex bg-slate-950 rounded-lg p-0.5 border border-white/5">
             <button
@@ -1317,196 +1317,48 @@ export function POSPage() {
             👋 {t.signOut}
           </button>
 
-          {/* Digital LED register total due */}
-          <div className="rounded-lg bg-black px-4 py-1.5 text-right border border-emerald-500/20 shadow-[inset_0_0_8px_rgba(0,0,0,0.8)] min-w-[160px]">
-            <span className="block text-[8px] uppercase tracking-widest text-slate-500 font-black">{t.totalDue}</span>
-            <span className="font-mono text-2xl font-black text-mint-400 animate-pulse tracking-wide">{formatCurrency(total)}</span>
-          </div>
+
         </div>
       </header>
 
-      {/* 2. SPLIT LAYOUT: Grid Search/Quick categories | Basket panel */}
-      <section className="flex flex-1 gap-3 overflow-hidden my-3 min-h-0">
-        {/* LEFT WORKSPACE: CATEGORIES & PRODUCT GRID */}
-        <div className="flex flex-[1.5] flex-col overflow-hidden">
-          
-          {/* POS Category Keyboard Rows */}
-          <div className="grid grid-cols-4 gap-2 mb-3 flex-shrink-0 sm:grid-cols-9">
-            <button
-              onClick={() => setSelectedCategory('all')}
-              className={`flex flex-col items-center justify-center rounded-xl border p-2 text-center transition-all duration-150 relative ${
-                selectedCategory === 'all'
-                  ? 'bg-gold-500 text-slate-950 border-gold-400 scale-[1.01] shadow-lg font-black'
-                  : 'bg-slate-900 border-white/5 hover:bg-slate-900/80 text-slate-300'
-              }`}
-            >
-              <span className="text-lg">⭐</span>
-              <span className="mt-1 text-[10px] font-black uppercase truncate w-full">{t.allItems}</span>
-            </button>
+      {/* 2. MAIN POS LAYOUT: Cart | Product Grid | Category Sidebar */}
+      <section className={`flex flex-1 overflow-hidden my-2 min-h-0 gap-0 ${isRtl ? 'flex-row-reverse' : 'flex-row'}`}>
 
-            {categories.map((cat) => {
-              const style = categoryStyles[cat.slug] || defaultCategoryStyle;
-              const isSelected = selectedCategory === cat.id;
-              const localizedCatName = categoryTranslations[cat.slug]?.[lang] || cat.name;
-
-              return (
-                <button
-                  key={cat.id}
-                  onClick={() => setSelectedCategory(cat.id)}
-                  className={`flex flex-col items-center justify-center rounded-xl border p-2 text-center transition-all duration-150 relative ${
-                    isSelected
-                      ? 'bg-gold-500 text-slate-950 border-gold-400 scale-[1.01] shadow-lg font-black'
-                      : `bg-slate-900 border-white/5 hover:bg-slate-900/80 text-slate-300`
-                  }`}
-                >
-                  {/* Category accent bar indicator */}
-                  <span className={`absolute top-1 left-1 right-1 h-0.5 rounded-full bg-gradient-to-r ${style.bg.replace('from-', '').replace('/20', '')}`} />
-                  <span className="text-lg mt-0.5">{style.emoji}</span>
-                  <span className="mt-1 text-[10px] font-black uppercase truncate w-full">{localizedCatName}</span>
-                </button>
-              );
-            })}
+        {/* ── LEFT: CHECKOUT / CART PANEL ── */}
+        <div className="flex flex-col overflow-hidden rounded-l-xl border border-white/10 bg-slate-900/70 shadow-[0_4px_25px_rgba(0,0,0,0.5)]" style={{width:'320px', flexShrink:0}}>
+          {/* Cart panel header */}
+          <div style={{
+            background:'linear-gradient(90deg,#0f172a,#0e1829)',
+            borderBottom:'1px solid rgba(255,255,255,0.07)',
+            padding:'5px 10px',
+            display:'flex',
+            alignItems:'center',
+            justifyContent:'space-between',
+            flexShrink:0,
+          }}>
+            <div style={{display:'flex',alignItems:'center',gap:6}}>
+              <span style={{fontSize:'12px'}}>🧾</span>
+              <span style={{fontSize:'10px',fontWeight:900,color:'#94a3b8',textTransform:'uppercase',letterSpacing:'1px'}}>
+                {isRtl ? 'سەبەتە' : 'CURRENT SALE'}
+              </span>
+            </div>
+            <span style={{
+              fontSize:'8px', fontWeight:700, color:'#475569', fontFamily:'monospace',
+            }}>
+              {cart.reduce((s,i)=>s+i.quantity,0)} {isRtl?'بابەت':'items'}
+            </span>
           </div>
 
-          {/* Barcode scanner input field */}
-          <form onSubmit={handleBarcodeSubmit} className="relative mb-3 flex gap-2 flex-shrink-0">
-            <span className={`absolute ${isRtl ? 'right-4' : 'left-4'} top-4 text-emerald-400 text-xs font-mono tracking-widest`}>
-              [F1] SCAN:
-            </span>
-            <input
-              ref={searchInputRef}
-              autoFocus
-              type="text"
-              className={`w-full rounded-xl border border-white/10 bg-slate-900 py-3.5 ${
-                isRtl ? 'pr-20 pl-4 text-right' : 'pl-20 pr-4 text-left'
-              } text-sm font-mono text-white focus:outline-none focus:border-gold-500/50 shadow-inner`}
-              placeholder={t.searchPlaceholder}
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-            />
-            <span className="absolute right-4 top-4 flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-            </span>
-          </form>
-
-          {/* Grid listing products using cards with image/emblems */}
-          <div className="flex-1 overflow-y-auto pr-1 scrollbar-thin">
-            {filteredProducts.length === 0 ? (
-              <div className="flex h-full flex-col items-center justify-center text-slate-500">
-                <p className="text-sm font-semibold">{isRtl ? 'هیچ بەرهەمێک نەدۆزرایەوە' : 'No matching products in store catalog'}</p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
-                {filteredProducts.map((p) => {
-                  const isLowStock = p.stockQuantity <= p.lowStockThreshold;
-                  const unitLabel = p.unit === 'KG' ? 'kg' : p.unit === 'LITER' ? 'L' : 'pc';
-                  const style = categoryStyles[p.category.slug] || defaultCategoryStyle;
-                  const hasPromo = activePromos.some((promo) => promo.affectedItems.includes(p.id));
-                  const localizedName = productTranslations[p.sku]?.[lang] || p.name;
-                  
-                  // In-cart quantity check
-                  const cartItem = cart.find((item) => item.product.id === p.id);
-                  const qtyInCart = cartItem ? cartItem.quantity : 0;
-
-                  return (
-                    <button
-                      key={p.id}
-                      onClick={() => addProduct(p)}
-                      disabled={p.stockQuantity <= 0}
-                      className={`group flex flex-col justify-between rounded-xl border overflow-hidden ${
-                        qtyInCart > 0 
-                          ? 'border-emerald-500 bg-emerald-500/5 ring-1 ring-emerald-500/20' 
-                          : 'border-white/5 bg-slate-900/40 hover:bg-slate-900/80 hover:border-gold-500/30'
-                      } ${isRtl ? 'text-right' : 'text-left'} transition-all duration-150 shadow-md disabled:opacity-40`}
-                    >
-                      {/* Product image container / custom category emblem if null */}
-                      <div className="relative h-28 w-full bg-slate-950/60 flex items-center justify-center overflow-hidden border-b border-white/5">
-                        {p.imageUrl ? (
-                          <img
-                            src={apiUrl(p.imageUrl)}
-                            alt={localizedName}
-                            className="h-full w-full object-cover transition-transform group-hover:scale-105"
-                          />
-                        ) : (
-                          <span className="text-4xl filter drop-shadow-md select-none">
-                            {style.emoji}
-                          </span>
-                        )}
-                        {hasPromo && (
-                          <span className="absolute left-2 top-2 rounded bg-mint-500/20 px-2 py-0.5 text-[9px] font-black text-mint-300 uppercase tracking-widest border border-mint-500/20">
-                            PROMO
-                          </span>
-                        )}
-                        <span className="absolute right-2 top-2 rounded bg-slate-950/85 px-1.5 py-0.5 text-[9px] font-mono text-slate-400">
-                          {t.sku} {p.sku}
-                        </span>
-                        
-                        {/* Qty Badge in Cart */}
-                        {qtyInCart > 0 && (
-                          <span className="absolute left-2 bottom-2 rounded-full bg-emerald-500 text-slate-950 px-2 py-0.5 text-[10px] font-black shadow-[0_0_10px_rgba(16,185,129,0.6)]">
-                            {p.unit === 'KG' || p.unit === 'LITER' ? `${qtyInCart.toFixed(2)} ${unitLabel}` : `${qtyInCart}x`}
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Product copy */}
-                      <div className="p-3 flex flex-col justify-between flex-1">
-                        <h4 className="text-xs font-bold text-white line-clamp-2 min-h-[32px] group-hover:text-gold-400 transition-colors">
-                          {localizedName}
-                        </h4>
-
-                        <div className="mt-3 flex items-end justify-between">
-                          <div>
-                            <span className="block text-[9px] text-slate-500 uppercase tracking-wider font-mono">
-                              {t.price}
-                            </span>
-                            <span className="font-mono text-sm font-black text-gold-400">
-                              {formatCurrency(Number(p.price))}
-                            </span>
-                            <span className="text-[10px] text-slate-500 font-mono ml-0.5">
-                              /{unitLabel}
-                            </span>
-                          </div>
-
-                          <div className="text-right">
-                            <span className="block text-[8px] text-slate-500 uppercase tracking-wider font-mono">
-                              {t.stock}
-                            </span>
-                            <span
-                              className={`font-mono text-xs font-bold ${
-                                p.stockQuantity <= 0
-                                  ? 'text-red-400'
-                                  : isLowStock
-                                  ? 'text-amber-400'
-                                  : 'text-slate-300'
-                              }`}
-                            >
-                              {p.stockQuantity}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* RIGHT CHECKOUT PANEL: DIGITAL BASKET RECEIPT */}
-        <div className="flex flex-[0.95] flex-col overflow-hidden rounded-2xl border border-white/10 bg-slate-900/60 shadow-[0_4px_25px_rgba(0,0,0,0.5)]">
           {/* Active Loyalty Customer Badge */}
           {selectedCustomer && (
-            <div className="border-b border-white/5 bg-slate-950/60 p-3">
-              <div className="flex items-center justify-between rounded-xl bg-gold-500/10 border border-gold-500/20 p-2.5 text-xs">
-                <div className="flex items-center gap-2">
-                  <span className="text-lg">👤</span>
+            <div className="border-b border-white/5 bg-slate-950/60 px-2 py-1.5">
+              <div className="flex items-center justify-between rounded bg-gold-500/10 border border-gold-500/20 px-2 py-1 text-xs">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-sm">👤</span>
                   <div>
-                    <p className="font-extrabold text-white text-xs">{selectedCustomer.name}</p>
-                    <p className="text-[9px] text-slate-400 font-mono">
-                      {t.phone}: {selectedCustomer.phone} · {t.points}: {selectedCustomer.loyaltyPoints}
+                    <p className="font-extrabold text-white text-[10px] leading-none">{selectedCustomer.name}</p>
+                    <p className="text-[8px] text-slate-400 font-mono mt-0.5">
+                      {t.points}: {selectedCustomer.loyaltyPoints}
                     </p>
                   </div>
                 </div>
@@ -1515,7 +1367,7 @@ export function POSPage() {
                     setSelectedCustomer(null);
                     setPointsToRedeem('0');
                   }}
-                  className="text-red-400 hover:text-red-300 font-bold hover:underline"
+                  className="text-red-400 hover:text-red-300 text-xs font-bold"
                 >
                   ✕
                 </button>
@@ -1523,17 +1375,17 @@ export function POSPage() {
             </div>
           )}
 
-          {/* Cart Items List Container (Styled like continuous receipt tape) */}
-          <div className="flex-1 overflow-y-auto p-3.5 scrollbar-thin">
+          {/* Cart Items List — compact receipt-tape style */}
+          <div className="flex-1 overflow-y-auto scrollbar-thin" style={{padding:'4px 6px'}}>
             {cart.length === 0 ? (
               <div className="flex h-full flex-col items-center justify-center text-slate-500 gap-2">
-                <span className="text-4xl">📄</span>
-                <p className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                <span className="text-3xl">📄</span>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
                   {isRtl ? 'سەبەتە بەتاڵە' : 'TICKET EMPTY - SCAN ITEMS'}
                 </p>
               </div>
             ) : (
-              <div className="space-y-2.5">
+              <div style={{display:'flex',flexDirection:'column',gap:'2px'}}>
                 {cart.map((item) => {
                   const lineTotal = Number(item.product.price) * item.quantity;
                   const itemLabel = item.product.unit === 'KG' ? 'kg' : item.product.unit === 'LITER' ? 'L' : 'pc';
@@ -1542,64 +1394,75 @@ export function POSPage() {
                   return (
                     <div
                       key={item.product.id}
-                      className="flex items-center justify-between gap-3 rounded-lg bg-slate-950/50 p-2 border border-white/5 hover:border-white/10 transition-colors"
+                      style={{
+                        background:'rgba(15,23,42,0.7)',
+                        borderBottom:'1px solid rgba(255,255,255,0.05)',
+                        padding:'4px 6px',
+                      }}
                     >
-                      <div className="flex-1 min-w-0">
-                        <h5 className="text-xs font-black text-white truncate">{localizedName}</h5>
-                        <p className="text-[9px] text-slate-500 font-mono mt-0.5">
-                          {formatCurrency(Number(item.product.price))} / {itemLabel}
-                        </p>
-                      </div>
-
-                      <div className="flex items-center gap-1.5">
-                        {/* Decrement quantity */}
+                      {/* Name row */}
+                      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:4}}>
+                        <span style={{
+                          fontSize:'10px',fontWeight:800,color:'#e2e8f0',
+                          overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',
+                          flex:1, minWidth:0,
+                          direction: isRtl ? 'rtl' : 'ltr',
+                        }}>{localizedName}</span>
                         <button
-                          onClick={() => {
-                            if (item.quantity <= 1) {
-                              handleRemoveCartItem(item.product.id);
-                            } else {
+                          onClick={() => handleRemoveCartItem(item.product.id)}
+                          style={{color:'#475569',fontSize:'9px',fontWeight:900,flexShrink:0,padding:'0 2px'}}
+                          title={t.remove}
+                        >✕</button>
+                      </div>
+                      {/* Qty + price row */}
+                      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginTop:'2px'}}>
+                        <div style={{display:'flex',alignItems:'center',gap:'2px'}}>
+                          <button
+                            onClick={() => {
+                              if (item.quantity <= 1) {
+                                handleRemoveCartItem(item.product.id);
+                              } else {
+                                setCart((curr) =>
+                                  curr.map((c) =>
+                                    c.product.id === item.product.id ? { ...c, quantity: c.quantity - 1 } : c
+                                  )
+                                );
+                              }
+                            }}
+                            style={{
+                              width:18,height:18,display:'flex',alignItems:'center',justifyContent:'center',
+                              background:'rgba(255,255,255,0.06)',border:'1px solid rgba(255,255,255,0.1)',
+                              borderRadius:2,color:'#94a3b8',fontSize:'11px',fontWeight:900,cursor:'pointer',
+                            }}
+                          >−</button>
+                          <span style={{
+                            width:32,textAlign:'center',fontSize:'11px',fontFamily:'monospace',
+                            fontWeight:900,color:'#fff',
+                          }}>
+                            {item.product.unit === 'KG' || item.product.unit === 'LITER'
+                              ? item.quantity.toFixed(2)
+                              : item.quantity}{itemLabel}
+                          </span>
+                          <button
+                            onClick={() => {
                               setCart((curr) =>
                                 curr.map((c) =>
-                                  c.product.id === item.product.id ? { ...c, quantity: c.quantity - 1 } : c
+                                  c.product.id === item.product.id ? { ...c, quantity: c.quantity + 1 } : c
                                 )
                               );
-                            }
-                          }}
-                          className="flex h-6 w-6 items-center justify-center rounded bg-white/5 border border-white/10 text-xs font-black text-slate-300 hover:bg-white/10 transition-all"
-                        >
-                          -
-                        </button>
-                        <span className="w-10 text-center text-xs font-mono font-black text-white">
-                          {item.product.unit === 'KG' || item.product.unit === 'LITER'
-                            ? item.quantity.toFixed(2)
-                            : item.quantity}
-                        </span>
-                        {/* Increment quantity */}
-                        <button
-                          onClick={() => {
-                            setCart((curr) =>
-                              curr.map((c) =>
-                                c.product.id === item.product.id ? { ...c, quantity: c.quantity + 1 } : c
-                              )
-                            );
-                          }}
-                          className="flex h-6 w-6 items-center justify-center rounded bg-white/5 border border-white/10 text-xs font-black text-slate-300 hover:bg-white/10 transition-all"
-                        >
-                          +
-                        </button>
+                            }}
+                            style={{
+                              width:18,height:18,display:'flex',alignItems:'center',justifyContent:'center',
+                              background:'rgba(255,255,255,0.06)',border:'1px solid rgba(255,255,255,0.1)',
+                              borderRadius:2,color:'#94a3b8',fontSize:'11px',fontWeight:900,cursor:'pointer',
+                            }}
+                          >+</button>
+                        </div>
+                        <span style={{
+                          fontSize:'11px',fontFamily:'monospace',fontWeight:900,
+                          color:'#fbbf24',letterSpacing:'-0.3px',
+                        }}>{formatCurrency(lineTotal)}</span>
                       </div>
-
-                      <div className="w-16 text-right font-mono text-xs font-black text-gold-400">
-                        {formatCurrency(lineTotal)}
-                      </div>
-
-                      <button
-                        onClick={() => handleRemoveCartItem(item.product.id)}
-                        className="text-slate-500 hover:text-red-400 text-xs transition-colors p-1"
-                        title={t.remove}
-                      >
-                        ✕
-                      </button>
                     </div>
                   );
                 })}
@@ -1607,144 +1470,660 @@ export function POSPage() {
             )}
           </div>
 
-          {/* Checkout Totals & Transaction Control Center */}
-          <div className="border-t border-white/10 bg-slate-950 p-4 space-y-3 flex-shrink-0 shadow-[0_-4px_15px_rgba(0,0,0,0.3)]">
-            <div className="space-y-1.5 text-xs text-slate-400 font-semibold border-b border-white/5 pb-2.5">
-              <div className="flex justify-between">
-                <span>{t.subtotal}</span>
-                <span className="font-mono text-white">{formatCurrency(subtotal)}</span>
+          {/* ── Checkout Totals & Transaction Control Center ── */}
+          <div style={{
+            borderTop: '1px solid rgba(255,255,255,0.08)',
+            background: '#070a12',
+            flexShrink: 0,
+          }}>
+
+            {/* ── TOTALS STRIP ── */}
+            <div style={{padding:'6px 10px 4px', borderBottom:'1px solid rgba(255,255,255,0.05)'}}>
+              {/* Subtotal / Discount / Tax rows */}
+              <div style={{display:'flex',flexDirection:'column',gap:'2px',marginBottom:'4px'}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                  <span style={{fontSize:'9px',color:'#64748b',fontWeight:600,textTransform:'uppercase',letterSpacing:'0.5px'}}>{t.subtotal}</span>
+                  <span style={{fontSize:'10px',color:'#cbd5e1',fontFamily:'monospace',fontWeight:700}}>{formatCurrency(subtotal)}</span>
+                </div>
+                {Number(pointsToRedeem) > 0 && selectedCustomer && (
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                    <span style={{fontSize:'9px',color:'#f87171',fontWeight:600}}>{t.pointsRedeemed} ({pointsToRedeem}pts)</span>
+                    <span style={{fontSize:'10px',color:'#f87171',fontFamily:'monospace',fontWeight:700}}>−{formatCurrency(customerRedeemable)}</span>
+                  </div>
+                )}
+                {(manualDiscount > 0 || couponDiscount > 0) && (
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                    <span style={{fontSize:'9px',color:'#f87171',fontWeight:600}}>{t.discount}</span>
+                    <span style={{fontSize:'10px',color:'#f87171',fontFamily:'monospace',fontWeight:700}}>−{formatCurrency(manualDiscount + couponDiscount)}</span>
+                  </div>
+                )}
+                {promoDiscount > 0 && (
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                    <span style={{fontSize:'9px',color:'#34d399',fontWeight:600}}>Auto Promos</span>
+                    <span style={{fontSize:'10px',color:'#34d399',fontFamily:'monospace',fontWeight:700}}>−{formatCurrency(promoDiscount)}</span>
+                  </div>
+                )}
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                  <span style={{fontSize:'9px',color:'#64748b',fontWeight:600,textTransform:'uppercase',letterSpacing:'0.5px'}}>{t.tax}</span>
+                  <span style={{fontSize:'10px',color:'#94a3b8',fontFamily:'monospace',fontWeight:700}}>{formatCurrency(taxBreakdown)}</span>
+                </div>
               </div>
 
-              {/* Points redemption */}
-              {Number(pointsToRedeem) > 0 && selectedCustomer && (
-                <div className="flex justify-between text-red-400 font-mono">
-                  <span>
-                    {t.pointsRedeemed} ({pointsToRedeem} pts)
-                  </span>
-                  <span>-${formatCurrency(customerRedeemable)}</span>
+              {/* Grand Total — compact LED bar */}
+              <div style={{
+                display:'flex', alignItems:'center', justifyContent:'space-between',
+                background:'linear-gradient(90deg,#052e16,#064e3b)',
+                border:'1px solid rgba(52,211,153,0.2)',
+                borderRadius:'5px',
+                padding:'5px 10px',
+              }}>
+                <span style={{fontSize:'9px',color:'#6ee7b7',fontWeight:900,textTransform:'uppercase',letterSpacing:'1.5px'}}>{t.total}</span>
+                <span style={{fontSize:'20px',color:'#34d399',fontFamily:'monospace',fontWeight:900,letterSpacing:'-1px',lineHeight:1}}>{formatCurrency(total)}</span>
+              </div>
+
+              {/* Loyalty points slider — only when customer has points */}
+              {selectedCustomer && selectedCustomer.loyaltyPoints > 0 && (
+                <div style={{marginTop:'4px',background:'rgba(255,255,255,0.03)',border:'1px solid rgba(255,255,255,0.06)',borderRadius:'4px',padding:'4px 6px'}}>
+                  <div style={{display:'flex',justifyContent:'space-between',marginBottom:'2px'}}>
+                    <span style={{fontSize:'8px',color:'#475569',fontFamily:'monospace'}}>Redeem (Max {selectedCustomer.loyaltyPoints} pts)</span>
+                    <span style={{fontSize:'8px',color:'#fbbf24',fontWeight:700,fontFamily:'monospace'}}>−{formatCurrency(customerRedeemable)}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max={selectedCustomer.loyaltyPoints}
+                    value={pointsToRedeem}
+                    onChange={(e) => handleRedeemPointsChange(e.target.value)}
+                    style={{width:'100%',height:'3px',accentColor:'#d97706',cursor:'pointer',display:'block'}}
+                  />
                 </div>
               )}
+            </div>
 
-              {/* Coupon / Manual Discounts */}
-              {(manualDiscount > 0 || couponDiscount > 0) && (
-                <div className="flex justify-between text-red-400 font-mono">
-                  <span>{t.discount}</span>
-                  <span>-${formatCurrency(manualDiscount + couponDiscount)}</span>
+            {/* ── PAYMENT BUTTONS ── (shown when menu view) */}
+            <div style={{
+              overflow: 'hidden',
+              maxHeight: checkoutView === 'menu' ? '400px' : '0px',
+              opacity: checkoutView === 'menu' ? 1 : 0,
+              transition: 'max-height 0.3s cubic-bezier(0.4,0,0.2,1), opacity 0.2s ease',
+            }}>
+              <div style={{padding:'6px 8px', display:'flex', flexDirection:'column', gap:'5px'}}>
+
+                {/* PRIMARY ROW: Cash | Card | Split — 3 equal columns */}
+                <div style={{display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:'4px'}}>
+                  {/* CASH */}
+                  <button
+                    id="pos-cash-payment-btn"
+                    onClick={() => setCheckoutView('cash')}
+                    disabled={!cart.length || !drawer}
+                    style={{
+                      display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
+                      gap:'1px', padding:'7px 4px',
+                      background:'linear-gradient(160deg,#064e3b,#065f46)',
+                      border:'1px solid rgba(52,211,153,0.3)',
+                      borderRadius:'5px',
+                      color:'#34d399',
+                      cursor: (!cart.length || !drawer) ? 'not-allowed' : 'pointer',
+                      opacity: (!cart.length || !drawer) ? 0.35 : 1,
+                      transition:'opacity 0.1s, transform 0.08s',
+                    }}
+                    onMouseDown={e => { if (cart.length && drawer) (e.currentTarget as HTMLElement).style.transform='scale(0.96)'; }}
+                    onMouseUp={e => { (e.currentTarget as HTMLElement).style.transform='scale(1)'; }}
+                  >
+                    <span style={{fontSize:'14px',lineHeight:1}}>💵</span>
+                    <span style={{fontSize:'9px',fontWeight:900,textTransform:'uppercase',letterSpacing:'0.3px'}}>
+                      {lang === 'ku' ? 'نەخت' : 'Cash'}
+                    </span>
+                    <span style={{fontSize:'7px',color:'rgba(52,211,153,0.5)',fontFamily:'monospace'}}>[F3]</span>
+                  </button>
+
+                  {/* CARD */}
+                  <button
+                    id="pos-card-payment-btn"
+                    onClick={() => setCheckoutView('card')}
+                    disabled={!cart.length || !drawer}
+                    style={{
+                      display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
+                      gap:'1px', padding:'7px 4px',
+                      background:'linear-gradient(160deg,#1e1b4b,#312e81)',
+                      border:'1px solid rgba(99,102,241,0.3)',
+                      borderRadius:'5px',
+                      color:'#818cf8',
+                      cursor: (!cart.length || !drawer) ? 'not-allowed' : 'pointer',
+                      opacity: (!cart.length || !drawer) ? 0.35 : 1,
+                      transition:'opacity 0.1s, transform 0.08s',
+                    }}
+                    onMouseDown={e => { if (cart.length && drawer) (e.currentTarget as HTMLElement).style.transform='scale(0.96)'; }}
+                    onMouseUp={e => { (e.currentTarget as HTMLElement).style.transform='scale(1)'; }}
+                  >
+                    <span style={{fontSize:'14px',lineHeight:1}}>💳</span>
+                    <span style={{fontSize:'9px',fontWeight:900,textTransform:'uppercase',letterSpacing:'0.3px'}}>
+                      {lang === 'ku' ? 'کارت' : 'Card'}
+                    </span>
+                    <span style={{fontSize:'7px',color:'rgba(99,102,241,0.5)',fontFamily:'monospace'}}>[F3]</span>
+                  </button>
+
+                  {/* SPLIT */}
+                  <button
+                    id="pos-split-payment-btn"
+                    onClick={() => setCheckoutView('split')}
+                    disabled={!cart.length || !drawer}
+                    style={{
+                      display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
+                      gap:'1px', padding:'7px 4px',
+                      background:'linear-gradient(160deg,#3b1f5e,#4c1d95)',
+                      border:'1px solid rgba(168,85,247,0.25)',
+                      borderRadius:'5px',
+                      color:'#c084fc',
+                      cursor: (!cart.length || !drawer) ? 'not-allowed' : 'pointer',
+                      opacity: (!cart.length || !drawer) ? 0.35 : 1,
+                      transition:'opacity 0.1s, transform 0.08s',
+                    }}
+                    onMouseDown={e => { if (cart.length && drawer) (e.currentTarget as HTMLElement).style.transform='scale(0.96)'; }}
+                    onMouseUp={e => { (e.currentTarget as HTMLElement).style.transform='scale(1)'; }}
+                  >
+                    <span style={{fontSize:'14px',lineHeight:1}}>⚖️</span>
+                    <span style={{fontSize:'9px',fontWeight:900,textTransform:'uppercase',letterSpacing:'0.3px'}}>
+                      {lang === 'ku' ? 'دووبەش' : 'Split'}
+                    </span>
+                    <span style={{fontSize:'7px',color:'rgba(168,85,247,0.45)',fontFamily:'monospace'}}>Mix</span>
+                  </button>
                 </div>
-              )}
 
-              {promoDiscount > 0 && (
-                <div className="flex justify-between text-mint-400 font-mono">
-                  <span>Auto Promos</span>
-                  <span>-${formatCurrency(promoDiscount)}</span>
+                {/* SECONDARY 2×2 GRID: Exact Cash | Recall | Park | Void */}
+                <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'3px'}}>
+                  {/* Exact Cash [F2] */}
+                  <button
+                    onClick={() => { if (cart.length && drawer) { void triggerCheckout(true); } }}
+                    disabled={!cart.length || !drawer}
+                    style={{
+                      display:'flex', alignItems:'center', justifyContent:'center', gap:'4px',
+                      padding:'5px 6px',
+                      background:'rgba(6,78,59,0.25)',
+                      border:'1px solid rgba(52,211,153,0.12)',
+                      borderRadius:'4px',
+                      color:'#6ee7b7',
+                      fontSize:'9px', fontWeight:700,
+                      cursor: (!cart.length || !drawer) ? 'not-allowed' : 'pointer',
+                      opacity: (!cart.length || !drawer) ? 0.3 : 1,
+                      transition:'background 0.1s',
+                    }}
+                  >
+                    <span style={{fontSize:'11px'}}>⚡</span>
+                    <span style={{lineHeight:1}}>
+                      {lang === 'ku' ? 'نەختی تەواو' : 'Exact Cash'}
+                      <span style={{display:'block',fontSize:'7px',color:'rgba(110,231,183,0.4)',fontFamily:'monospace',lineHeight:1}}>[F2]</span>
+                    </span>
+                  </button>
+
+                  {/* Recall Parked */}
+                  <button
+                    onClick={() => { void loadHoldsCount(); setActiveModal('holds'); }}
+                    style={{
+                      display:'flex', alignItems:'center', justifyContent:'center', gap:'4px',
+                      padding:'5px 6px',
+                      background: holdsCount > 0 ? 'rgba(120,85,0,0.25)' : 'rgba(255,255,255,0.03)',
+                      border: holdsCount > 0 ? '1px solid rgba(251,191,36,0.25)' : '1px solid rgba(255,255,255,0.07)',
+                      borderRadius:'4px',
+                      color: holdsCount > 0 ? '#fbbf24' : '#475569',
+                      fontSize:'9px', fontWeight:700,
+                      cursor:'pointer',
+                      transition:'background 0.1s',
+                    }}
+                  >
+                    <span style={{fontSize:'11px'}}>📥</span>
+                    <span style={{lineHeight:1}}>
+                      {lang === 'ku' ? 'هێنانەوە' : 'Recall'}
+                      <span style={{display:'block',fontSize:'7px',color: holdsCount > 0 ? 'rgba(251,191,36,0.5)' : 'rgba(255,255,255,0.15)',fontFamily:'monospace',lineHeight:1}}>({holdsCount})</span>
+                    </span>
+                  </button>
+
+                  {/* Park Basket [F5] */}
+                  <button
+                    onClick={() => void saveHold()}
+                    disabled={!cart.length}
+                    style={{
+                      display:'flex', alignItems:'center', justifyContent:'center', gap:'4px',
+                      padding:'5px 6px',
+                      background:'rgba(255,255,255,0.03)',
+                      border:'1px solid rgba(255,255,255,0.07)',
+                      borderRadius:'4px',
+                      color:'#64748b',
+                      fontSize:'9px', fontWeight:700,
+                      cursor: !cart.length ? 'not-allowed' : 'pointer',
+                      opacity: !cart.length ? 0.3 : 1,
+                      transition:'background 0.1s',
+                    }}
+                  >
+                    <span style={{fontSize:'11px'}}>📂</span>
+                    <span style={{lineHeight:1}}>
+                      {lang === 'ku' ? 'ڕاگرتن' : 'Park'}
+                      <span style={{display:'block',fontSize:'7px',color:'rgba(255,255,255,0.15)',fontFamily:'monospace',lineHeight:1}}>[F5]</span>
+                    </span>
+                  </button>
+
+                  {/* Void Sale [F8] */}
+                  <button
+                    onClick={handleVoidTransaction}
+                    disabled={!cart.length}
+                    style={{
+                      display:'flex', alignItems:'center', justifyContent:'center', gap:'4px',
+                      padding:'5px 6px',
+                      background:'rgba(239,68,68,0.06)',
+                      border:'1px solid rgba(239,68,68,0.15)',
+                      borderRadius:'4px',
+                      color:'#f87171',
+                      fontSize:'9px', fontWeight:700,
+                      cursor: !cart.length ? 'not-allowed' : 'pointer',
+                      opacity: !cart.length ? 0.3 : 1,
+                      transition:'background 0.1s',
+                    }}
+                  >
+                    <span style={{fontSize:'11px'}}>🚫</span>
+                    <span style={{lineHeight:1}}>
+                      {lang === 'ku' ? 'پوچەڵکردن' : 'Void'}
+                      <span style={{display:'block',fontSize:'7px',color:'rgba(239,68,68,0.35)',fontFamily:'monospace',lineHeight:1}}>[F8]</span>
+                    </span>
+                  </button>
                 </div>
-              )}
 
-              <div className="flex justify-between">
-                <span>{t.tax}</span>
-                <span className="font-mono text-white">{formatCurrency(taxBreakdown)}</span>
               </div>
             </div>
 
-            {/* GRAND TOTAL REGISTER LED DISPLAY */}
-            <div className="flex justify-between items-center rounded-xl bg-black border border-emerald-500/20 p-4 text-emerald-400 shadow-[inset_0_0_10px_rgba(0,0,0,0.95)]">
-              <span className="text-xs uppercase font-black tracking-widest">{t.total}</span>
-              <span className="font-mono text-3xl font-black tracking-tight">{formatCurrency(total)}</span>
-            </div>
-
-            {/* Customer loyalty points redemption slider */}
-            {selectedCustomer && selectedCustomer.loyaltyPoints > 0 && (
-              <div className="rounded-lg bg-slate-900 p-2 border border-white/5 space-y-1">
-                <div className="flex justify-between text-[9px] font-mono">
-                  <span className="text-slate-500">Redeem Points (Max {selectedCustomer.loyaltyPoints})</span>
-                  <span className="font-bold text-gold-400">-{formatCurrency(customerRedeemable)}</span>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max={selectedCustomer.loyaltyPoints}
-                  value={pointsToRedeem}
-                  onChange={(e) => handleRedeemPointsChange(e.target.value)}
-                  className="w-full h-1 bg-slate-950 rounded-lg appearance-none cursor-pointer accent-gold-500"
+            {/* ── Inline Cash Panel ── */}
+            {checkoutView === 'cash' && (
+              <div style={{animation:'slideUp 0.3s cubic-bezier(0.34,1.56,0.64,1)'}}>
+                <InlineCashPanel
+                  saleTotal={total}
+                  lang={lang}
+                  onConfirm={(received, change, notes) => {
+                    void notes;
+                    handleInlineCashConfirm(received, change);
+                  }}
+                  onBack={() => setCheckoutView('menu')}
                 />
               </div>
             )}
 
-            {/* OVERSIZED TOUCH CHECKOUT KEYPAD ACTIONS */}
-            <div className="grid grid-cols-3 gap-2 pt-1.5">
-              <button
-                onClick={() => triggerCheckout(true)}
-                disabled={!cart.length || !drawer}
-                className="flex flex-col items-center justify-center rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-black py-3.5 text-xs shadow-md border border-emerald-500/30 transition-all disabled:opacity-40"
-              >
-                <span className="text-lg">💵</span>
-                <span className="mt-1 font-black uppercase tracking-wider">{t.exactCash}</span>
-                <span className="text-[8px] opacity-75 font-mono mt-0.5">[F2]</span>
-              </button>
-              <button
-                onClick={() => triggerCheckout(false)}
-                disabled={!cart.length || !drawer}
-                className="flex flex-col items-center justify-center rounded-xl bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-black py-3.5 text-xs shadow-md border border-blue-500/30 transition-all disabled:opacity-40"
-              >
-                <span className="text-lg">💳</span>
-                <span className="mt-1 font-black uppercase tracking-wider">{t.cardCheckout}</span>
-                <span className="text-[8px] opacity-75 font-mono mt-0.5">[F3]</span>
-              </button>
-              <button
-                onClick={() => {
-                  setCashAmount('');
-                  setCardAmount('');
-                  setActiveModal('split_pay');
-                }}
-                disabled={!cart.length || !drawer}
-                className="flex flex-col items-center justify-center rounded-xl bg-purple-600 hover:bg-purple-500 active:scale-95 text-white font-black py-3.5 text-xs shadow-md border border-purple-500/30 transition-all disabled:opacity-40"
-              >
-                <span className="text-lg">⚖️</span>
-                <span className="mt-1 font-black uppercase tracking-wider">{t.splitPay}</span>
-                <span className="text-[8px] opacity-75 font-mono mt-0.5">[SPLIT]</span>
-              </button>
-            </div>
+            {/* ── Inline Card Panel ── */}
+            {checkoutView === 'card' && (
+              <div style={{animation:'slideUp 0.3s cubic-bezier(0.34,1.56,0.64,1)'}}>
+                <InlineCardPanel
+                  saleTotal={total}
+                  lang={lang}
+                  onConfirm={handleInlineCardConfirm}
+                  onBack={() => setCheckoutView('menu')}
+                />
+              </div>
+            )}
 
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                onClick={() => void saveHold()}
-                disabled={!cart.length}
-                className="rounded-xl border border-white/10 bg-slate-900 hover:bg-slate-850 py-2.5 text-xs font-black text-slate-300 hover:text-white transition-all disabled:opacity-40 flex items-center justify-center gap-1.5"
-              >
-                📂 {t.parkBasket} <span className="text-[9px] opacity-60 font-mono">[F5]</span>
-              </button>
-              <button
-                onClick={handleVoidTransaction}
-                disabled={!cart.length}
-                className="rounded-xl border border-red-500/25 bg-red-500/5 hover:bg-red-500/10 py-2.5 text-xs font-black text-red-400 hover:text-red-300 transition-all disabled:opacity-40 flex items-center justify-center gap-1.5"
-              >
-                🚫 {t.voidSale} <span className="text-[9px] opacity-60 font-mono">[F8]</span>
-              </button>
-            </div>
+            {/* ── Inline Split Panel ── */}
+            {checkoutView === 'split' && (
+              <div style={{animation:'slideUp 0.3s cubic-bezier(0.34,1.56,0.64,1)'}}>
+                <InlineSplitPanel
+                  saleTotal={total}
+                  lang={lang}
+                  onConfirm={handleInlineSplitConfirm}
+                  onBack={() => setCheckoutView('menu')}
+                />
+              </div>
+            )}
 
-            {sale && (
-              <div className="rounded-xl border border-mint-500/25 bg-mint-500/10 p-2.5 text-xs text-mint-200 animate-fade-in shadow-inner">
-                <p className="font-black">✓ {t.transactionComplete}: R-{sale.receiptNumber}</p>
-                <div className="flex gap-4 mt-1.5">
+            {/* Sale success banner */}
+            {sale && checkoutView === 'menu' && (
+              <div style={{
+                margin:'0 8px 6px',
+                borderRadius:'5px',
+                border:'1px solid rgba(52,211,153,0.2)',
+                background:'rgba(6,78,59,0.15)',
+                padding:'6px 8px',
+              }}>
+                <p style={{fontSize:'9px',color:'#6ee7b7',fontWeight:800}}>✓ {t.transactionComplete}: R-{sale.receiptNumber}</p>
+                <div style={{display:'flex',gap:'10px',marginTop:'3px'}}>
                   <a
-                    className="font-bold text-gold-400 underline hover:text-gold-300"
+                    style={{fontSize:'9px',color:'#fbbf24',fontWeight:700,textDecoration:'underline'}}
                     href={apiUrl(`/sales/${sale.id}/receipt.pdf`)}
                     target="_blank"
                     rel="noreferrer"
-                  >
-                    📄 {t.downloadReceipt}
-                  </a>
+                  >📄 {t.downloadReceipt}</a>
                   <button
-                    className="font-bold text-gold-400 underline hover:text-gold-300"
+                    style={{fontSize:'9px',color:'#fbbf24',fontWeight:700,textDecoration:'underline',background:'none',border:'none',cursor:'pointer',padding:0}}
                     onClick={() => printReceipt(sale, lang, testMode, showNotification)}
-                  >
-                    🖨️ {t.reprintReceipt}
-                  </button>
+                  >🖨️ {t.reprintReceipt}</button>
                 </div>
               </div>
             )}
           </div>
         </div>
+        {/* ── END LEFT CART PANEL ── */}
+
+        {/* ── CENTER: COMPACT PRODUCT GRID ── */}
+        <div
+          className="flex flex-1 flex-col border-l border-r border-white/5 bg-slate-950"
+          style={{alignSelf:'flex-start', overflow:'visible'}}
+        >
+
+          {/* Barcode / Search bar */}
+          <form onSubmit={handleBarcodeSubmit} className="flex-shrink-0 flex items-center gap-0 border-b border-white/8 bg-[#0d0d12]" style={{height:'34px'}}>
+            <span className="text-emerald-400 text-[10px] font-mono tracking-widest px-2 flex-shrink-0 select-none">[F1]</span>
+            <div className="relative flex-1">
+              <input
+                ref={searchInputRef}
+                autoFocus
+                type="text"
+                className="w-full h-full bg-transparent py-1.5 pl-1 pr-8 text-[11px] font-mono text-white placeholder-slate-600 focus:outline-none"
+                placeholder={isRtl ? 'گەڕان / بارکۆد...' : 'Scan barcode or search...'}
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                dir={isRtl ? 'rtl' : 'ltr'}
+              />
+              <span className="absolute right-2 top-1/2 -translate-y-1/2 flex h-1.5 w-1.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+              </span>
+            </div>
+          </form>
+
+          {/* Compact product grid — exactly 3 visible rows, then scroll */}
+          <div
+            style={{
+              height: '275px',
+              overflowY: 'auto',
+              overflowX: 'hidden',
+              flexShrink: 0,
+              scrollbarWidth: 'thin',
+              scrollbarColor: '#1e293b transparent',
+            }}
+          >
+            {filteredProducts.length === 0 ? (
+              <div className="flex h-full flex-col items-center justify-center text-slate-600">
+                <span className="text-xl mb-1">🔍</span>
+                <p className="text-[9px] font-semibold uppercase tracking-wider">
+                  {isRtl ? 'هیچ بەرهەمێک نەدۆزرایەوە' : 'No products found'}
+                </p>
+              </div>
+            ) : (
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))',
+                gap: '2px',
+                padding: '2px',
+                alignContent: 'start',
+              }}>
+                {filteredProducts.map((p) => {
+                  const isLowStock = p.stockQuantity <= p.lowStockThreshold;
+                  const unitLabel = p.unit === 'KG' ? 'kg' : p.unit === 'LITER' ? 'L' : 'pc';
+                  const style = categoryStyles[p.category.slug] || defaultCategoryStyle;
+                  const hasPromo = activePromos.some((promo) => promo.affectedItems.includes(p.id));
+                  const localizedName = productTranslations[p.sku]?.[lang] || p.name;
+                  const cartItem = cart.find((item) => item.product.id === p.id);
+                  const qtyInCart = cartItem ? cartItem.quantity : 0;
+                  const outOfStock = p.stockQuantity <= 0;
+
+                  return (
+                    <button
+                      key={p.id}
+                      onClick={() => addProduct(p)}
+                      disabled={outOfStock}
+                      title={`${localizedName} — ${formatCurrency(Number(p.price))}/${unitLabel}`}
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        overflow: 'hidden',
+                        border: qtyInCart > 0
+                          ? '2px solid #22c55e'
+                          : outOfStock
+                          ? '1px solid rgba(239,68,68,0.18)'
+                          : '1px solid rgba(255,255,255,0.07)',
+                        borderRadius: '2px',
+                        background: qtyInCart > 0 ? 'rgba(21,128,61,0.15)' : '#0f1117',
+                        cursor: outOfStock ? 'not-allowed' : 'pointer',
+                        opacity: outOfStock ? 0.38 : 1,
+                        transition: 'border-color 0.08s',
+                        boxShadow: qtyInCart > 0 ? '0 0 5px rgba(34,197,94,0.3)' : 'none',
+                        minWidth: 0,
+                        position: 'relative',
+                      }}
+                    >
+                      {/* RED PRICE BAR — TOP */}
+                      <div style={{
+                        background: hasPromo
+                          ? 'linear-gradient(90deg,#6d28d9,#7c3aed)'
+                          : 'linear-gradient(90deg,#b91c1c,#dc2626)',
+                        padding: '1px 2px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        flexShrink: 0,
+                        lineHeight: 1,
+                        height: '13px',
+                      }}>
+                        <span style={{
+                          color: '#fff',
+                          fontSize: '8px',
+                          fontWeight: 900,
+                          fontFamily: 'monospace',
+                          letterSpacing: '-0.4px',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                        }}>
+                          {formatCurrency(Number(p.price))}
+                        </span>
+                        <span style={{
+                          color: 'rgba(255,255,255,0.55)',
+                          fontSize: '6px',
+                          fontWeight: 700,
+                          flexShrink: 0,
+                          marginLeft: '1px',
+                        }}>/{unitLabel}</span>
+                      </div>
+
+                      {/* PRODUCT IMAGE — fixed 62px tall, ~70% of card */}
+                      <div style={{
+                        position: 'relative',
+                        width: '100%',
+                        height: '62px',
+                        flexShrink: 0,
+                        overflow: 'hidden',
+                      }}>
+                        {p.imageUrl ? (
+                          <img
+                            src={apiUrl(p.imageUrl)}
+                            alt={localizedName}
+                            style={{width:'100%',height:'100%',objectFit:'cover',display:'block'}}
+                          />
+                        ) : (
+                          <div style={{
+                            width:'100%',height:'100%',
+                            display:'flex',alignItems:'center',justifyContent:'center',
+                            background: `linear-gradient(135deg,#0c0f1a,#111827)`,
+                          }}>
+                            <span style={{fontSize:'22px',lineHeight:1,userSelect:'none'}}>{style.emoji}</span>
+                          </div>
+                        )}
+
+                        {/* PROMO micro-badge */}
+                        {hasPromo && (
+                          <span style={{
+                            position:'absolute',top:1,left:1,
+                            background:'#7c3aed',color:'#fff',
+                            fontSize:'6px',fontWeight:900,padding:'1px 2px',
+                            borderRadius:'1px',textTransform:'uppercase',
+                          }}>%</span>
+                        )}
+
+                        {/* CART QTY badge */}
+                        {qtyInCart > 0 && (
+                          <span style={{
+                            position:'absolute',top:1,right:1,
+                            background:'#22c55e',color:'#000',
+                            minWidth:13,height:13,
+                            borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',
+                            fontSize:'7px',fontWeight:900,padding:'0 1px',
+                            boxShadow:'0 0 4px rgba(34,197,94,0.9)',
+                          }}>
+                            {p.unit === 'KG' || p.unit === 'LITER' ? `${qtyInCart.toFixed(1)}` : `${qtyInCart}×`}
+                          </span>
+                        )}
+
+                        {/* STOCK badge */}
+                        <span style={{
+                          position:'absolute',bottom:0,right:0,
+                          background: p.stockQuantity <= 0
+                            ? 'rgba(127,29,29,0.95)'
+                            : isLowStock
+                            ? 'rgba(120,53,15,0.9)'
+                            : 'rgba(0,0,0,0.45)',
+                          color: p.stockQuantity <= 0 ? '#fca5a5' : isLowStock ? '#fde68a' : '#6b7280',
+                          fontSize:'6px',fontWeight:700,fontFamily:'monospace',
+                          padding:'0 2px',lineHeight:'10px',
+                        }}>
+                          {p.stockQuantity <= 0 ? '✕' : p.stockQuantity}
+                        </span>
+                      </div>
+
+                      {/* RED NAME BAR — BOTTOM */}
+                      <div style={{
+                        background: 'linear-gradient(90deg,#991b1b,#7f1d1d)',
+                        padding: '1px 2px',
+                        flexShrink: 0,
+                        height: '12px',
+                        overflow: 'hidden',
+                        display: 'flex',
+                        alignItems: 'center',
+                      }}>
+                        <span style={{
+                          color: '#fecaca',
+                          fontSize: '7px',
+                          fontWeight: 700,
+                          display: 'block',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          width: '100%',
+                          textAlign: isRtl ? 'right' : 'left',
+                          lineHeight: 1,
+                        }}>
+                          {localizedName}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+        {/* ── END CENTER PRODUCT GRID ── */}
+
+        {/* ── RIGHT: VERTICAL CATEGORY SIDEBAR ── */}
+        <div style={{
+          width: '52px',
+          flexShrink: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+          background: '#08090f',
+          borderLeft: '1px solid rgba(255,255,255,0.06)',
+        }}>
+          {/* Sidebar label */}
+          <div style={{
+            padding: '3px 2px',
+            textAlign: 'center',
+            background: '#0a0c15',
+            borderBottom: '1px solid rgba(255,255,255,0.06)',
+            flexShrink: 0,
+          }}>
+            <span style={{fontSize:'6px', fontWeight:900, color:'#334155', textTransform:'uppercase', letterSpacing:'0.8px'}}>CAT</span>
+          </div>
+
+          {/* Scrollable category buttons */}
+          <div style={{
+            flex:1, overflowY:'auto', display:'flex', flexDirection:'column', gap:'1px', padding:'1px',
+            scrollbarWidth:'none',
+          }}>
+            {/* ALL button */}
+            <button
+              onClick={() => setSelectedCategory('all')}
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '3px 1px',
+                borderRadius: '2px',
+                border: selectedCategory === 'all' ? '1px solid rgba(59,130,246,0.7)' : '1px solid rgba(255,255,255,0.04)',
+                background: selectedCategory === 'all'
+                  ? 'linear-gradient(160deg,#1d4ed8,#1e40af)'
+                  : 'rgba(255,255,255,0.02)',
+                cursor: 'pointer',
+                gap: '1px',
+                flexShrink: 0,
+                transition: 'all 0.08s',
+                boxShadow: selectedCategory === 'all' ? '0 0 6px rgba(59,130,246,0.35)' : 'none',
+              }}
+            >
+              <span style={{fontSize:'12px', lineHeight:1}}>⭐</span>
+              <span style={{
+                fontSize: '6px',
+                fontWeight: 900,
+                color: selectedCategory === 'all' ? '#bfdbfe' : '#475569',
+                textTransform: 'uppercase',
+                letterSpacing: '0.2px',
+                textAlign: 'center',
+                lineHeight: 1,
+              }}>ALL</span>
+            </button>
+
+            {categories.map((cat) => {
+              const style = categoryStyles[cat.slug] || defaultCategoryStyle;
+              const isSelected = selectedCategory === cat.id;
+              const localizedCatName = categoryTranslations[cat.slug]?.[lang] || cat.name;
+              const shortName = localizedCatName.length > 6 ? localizedCatName.slice(0, 5) + '.' : localizedCatName;
+
+              return (
+                <button
+                  key={cat.id}
+                  onClick={() => setSelectedCategory(cat.id)}
+                  title={localizedCatName}
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '3px 1px',
+                    borderRadius: '2px',
+                    border: isSelected ? '1px solid rgba(59,130,246,0.7)' : '1px solid rgba(255,255,255,0.04)',
+                    background: isSelected
+                      ? 'linear-gradient(160deg,#1d4ed8,#1e40af)'
+                      : 'rgba(255,255,255,0.02)',
+                    cursor: 'pointer',
+                    gap: '1px',
+                    flexShrink: 0,
+                    transition: 'all 0.08s',
+                    boxShadow: isSelected ? '0 0 6px rgba(59,130,246,0.35)' : 'none',
+                  }}
+                >
+                  <span style={{fontSize:'12px', lineHeight:1}}>{style.emoji}</span>
+                  <span style={{
+                    fontSize: '6px',
+                    fontWeight: 900,
+                    color: isSelected ? '#bfdbfe' : '#374151',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.1px',
+                    textAlign: 'center',
+                    lineHeight: 1,
+                    wordBreak: 'break-all',
+                    maxWidth: '46px',
+                  }}>{shortName}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        {/* ── END RIGHT CATEGORY SIDEBAR ── */}
+
       </section>
 
       {/* 3. TERMINAL ACTION FOOTER BAR */}
@@ -1770,7 +2149,7 @@ export function POSPage() {
 
           <button
             onClick={() => {
-              setDrawerFloatInput('100.00');
+              setDrawerFloatInput('100000');
               setActiveModal('drawer');
             }}
             className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-slate-950/40 px-4 py-2.5 text-xs font-semibold text-slate-300 hover:bg-slate-950 hover:text-white transition-colors"
@@ -2113,7 +2492,7 @@ export function POSPage() {
                   <label className="block text-xs text-slate-400 mb-1">{t.openingFloat}</label>
                   <input
                     type="number"
-                    step="0.01"
+                    step="1"
                     className="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm font-mono text-white focus:outline-none"
                     value={drawerFloatInput}
                     onChange={(e) => setDrawerFloatInput(e.target.value)}
@@ -2151,7 +2530,7 @@ export function POSPage() {
                     <label className="block text-[10px] text-slate-400 mb-1">{t.amount}</label>
                     <input
                       type="number"
-                      step="0.01"
+                      step="1"
                       className="w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2 text-xs font-mono text-white focus:outline-none"
                       value={cashMovementAmount}
                       onChange={(e) => setCashMovementAmount(e.target.value)}
@@ -2189,7 +2568,7 @@ export function POSPage() {
                   <div className="flex gap-2">
                     <input
                       type="number"
-                      step="0.01"
+                      step="1"
                       className="flex-1 rounded-xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm font-mono text-white focus:outline-none"
                       value={drawerFloatInput}
                       onChange={(e) => setDrawerFloatInput(e.target.value)}
@@ -2359,106 +2738,7 @@ export function POSPage() {
         </div>
       )}
 
-      {/* MODAL: CUSTOM SPLIT PAYMENT AND TERMINAL EMULATOR */}
-      {activeModal === 'split_pay' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm">
-          <div className="w-[450px] rounded-2xl border border-white/10 bg-slate-900 p-6 shadow-2xl">
-            <h3 className="text-base font-bold uppercase tracking-wider text-gold-400 mb-4 text-center">
-              {t.creditTerminalSetup}
-            </h3>
-
-            {paymentStep !== 'idle' ? (
-              <div className="flex flex-col items-center justify-center py-10 space-y-4">
-                {paymentStep === 'terminal_connecting' && (
-                  <>
-                    <span className="h-10 w-10 border-4 border-gold-500 border-t-transparent rounded-full animate-spin" />
-                    <p className="text-sm font-semibold text-slate-200">{t.contactingTerminal}</p>
-                  </>
-                )}
-                {paymentStep === 'terminal_tap' && (
-                  <>
-                    <span className="text-5xl animate-bounce">💳</span>
-                    <p className="text-sm font-bold text-slate-200 uppercase tracking-wide">{t.insertCardAction}</p>
-                    <p className="text-xs text-slate-400">Waiting for response...</p>
-                  </>
-                )}
-                {paymentStep === 'terminal_approving' && (
-                  <>
-                    <span className="h-10 w-10 border-4 border-mint-500 border-t-transparent rounded-full animate-spin" />
-                    <p className="text-sm font-semibold text-slate-200">{t.terminalResponseAuth}</p>
-                  </>
-                )}
-                {paymentStep === 'terminal_approved' && (
-                  <>
-                    <span className="text-5xl text-mint-400">✓</span>
-                    <p className="text-sm font-black text-mint-400 uppercase tracking-widest">{t.terminalApproved}</p>
-                    <p className="text-xs text-slate-400">{t.reprintingCopy}</p>
-                  </>
-                )}
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <div className="rounded-xl bg-slate-950 p-4 border border-white/5 space-y-2 text-xs">
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">{t.totalDue}:</span>
-                    <span className="font-bold text-white font-mono">{formatCurrency(total)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">{t.paid}:</span>
-                    <span className={`font-bold font-mono ${paid >= total ? 'text-mint-400' : 'text-red-400'}`}>
-                      {formatCurrency(paid)}
-                    </span>
-                  </div>
-                  {changeDue > 0 && (
-                    <div className="flex justify-between text-mint-400 font-bold border-t border-white/5 pt-1.5">
-                      <span>{t.changeDue}:</span>
-                      <span className="font-mono">{formatCurrency(changeDue)}</span>
-                    </div>
-                  )}
-                </div>
-
-                <div className="space-y-3">
-                  <div>
-                    <label className="block text-xs text-slate-400 mb-1">{t.paid} ({t.cash})</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      className="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm font-mono text-white focus:outline-none"
-                      value={cashAmount}
-                      onChange={(e) => setCashAmount(e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-slate-400 mb-1">{t.paid} ({t.card})</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      className="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm font-mono text-white focus:outline-none"
-                      value={cardAmount}
-                      onChange={(e) => setCardAmount(e.target.value)}
-                    />
-                  </div>
-                </div>
-
-                <div className="flex gap-2 pt-2">
-                  <button
-                    onClick={closeModals}
-                    className="flex-1 rounded-xl border border-white/15 bg-transparent py-2.5 text-xs font-semibold hover:bg-white/5"
-                  >
-                    {t.cancel}
-                  </button>
-                  <button
-                    onClick={handleSplitCheckoutSubmit}
-                    className="flex-1 rounded-xl bg-gold-500 py-2.5 text-xs font-bold text-slate-950 hover:bg-gold-400"
-                  >
-                    {t.confirm}
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+      {/* Split pay modal removed — now handled inline via checkoutView state */}
     </div>
   );
 }

@@ -8,6 +8,6 @@ export const env = {
   clientUrl: process.env.CLIENT_URL ?? 'http://localhost:5173',
   jwtSecret: process.env.JWT_SECRET ?? 'change-me',
   jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? '7d',
-  currencyCode: process.env.CURRENCY_CODE ?? 'USD',
+  currencyCode: process.env.CURRENCY_CODE ?? 'IQD',
   uploadsDir: process.env.UPLOADS_DIR ?? 'server/uploads'
 };

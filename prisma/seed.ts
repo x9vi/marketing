@@ -112,7 +112,7 @@ async function main() {
     create: {
       name: 'Apple', sku: 'APL-001', barcode: '100000000001',
       categoryId: produce.id, taxCategoryId: reducedTax.id,
-      price: 1.99, costPrice: 1.15, stockQuantity: 160,
+      price: 1500, costPrice: 900, stockQuantity: 160,
       lowStockThreshold: 30, unit: Unit.KG, imageUrl: '/uploads/apple.jpg', expiryTracked: true
     }
   });
@@ -123,7 +123,7 @@ async function main() {
     create: {
       name: 'Banana', sku: 'BAN-001', barcode: '100000000002',
       categoryId: produce.id, taxCategoryId: reducedTax.id,
-      price: 0.99, costPrice: 0.55, stockQuantity: 200,
+      price: 1000, costPrice: 500, stockQuantity: 200,
       lowStockThreshold: 40, unit: Unit.KG, imageUrl: '/uploads/banana.jpg'
     }
   });
@@ -134,7 +134,7 @@ async function main() {
     create: {
       name: 'Tomato', sku: 'TOM-001', barcode: '100000000003',
       categoryId: produce.id, taxCategoryId: reducedTax.id,
-      price: 2.49, costPrice: 1.40, stockQuantity: 90,
+      price: 2000, costPrice: 1200, stockQuantity: 90,
       lowStockThreshold: 20, unit: Unit.KG
     }
   });
@@ -145,7 +145,7 @@ async function main() {
     create: {
       name: 'Whole Milk', sku: 'MILK-01', barcode: '200000000001',
       categoryId: dairy.id, taxCategoryId: zeroTax.id,
-      price: 3.49, costPrice: 2.1, stockQuantity: 42,
+      price: 1500, costPrice: 900, stockQuantity: 42,
       lowStockThreshold: 12, unit: Unit.LITER, imageUrl: '/uploads/milk.jpg', expiryTracked: true
     }
   });
@@ -156,7 +156,7 @@ async function main() {
     create: {
       name: 'White Bread', sku: 'BRD-001', barcode: '300000000001',
       categoryId: bakery.id, taxCategoryId: zeroTax.id,
-      price: 2.29, costPrice: 1.20, stockQuantity: 55,
+      price: 1000, costPrice: 600, stockQuantity: 55,
       lowStockThreshold: 15, unit: Unit.PIECE, expiryTracked: true
     }
   });
@@ -167,7 +167,7 @@ async function main() {
     create: {
       name: 'Cheddar Cheese', sku: 'CHZ-001', barcode: '400000000001',
       categoryId: dairy.id, taxCategoryId: standardTax.id,
-      price: 4.99, costPrice: 3.20, stockQuantity: 35,
+      price: 5000, costPrice: 3000, stockQuantity: 35,
       lowStockThreshold: 10, unit: Unit.PIECE
     }
   });
@@ -178,7 +178,7 @@ async function main() {
     create: {
       name: 'Potato Chips', sku: 'CHP-001', barcode: '500000000001',
       categoryId: snacks.id, taxCategoryId: standardTax.id,
-      price: 3.29, costPrice: 1.80, stockQuantity: 80,
+      price: 2000, costPrice: 1000, stockQuantity: 80,
       lowStockThreshold: 20, unit: Unit.PIECE
     }
   });
@@ -189,7 +189,7 @@ async function main() {
     create: {
       name: 'Nutella Spread 400g', sku: 'NUT-001', barcode: '700000000002',
       categoryId: snacks.id, taxCategoryId: standardTax.id,
-      price: 4.99, costPrice: 2.90, stockQuantity: 50,
+      price: 7500, costPrice: 4500, stockQuantity: 50,
       lowStockThreshold: 15, unit: Unit.PIECE
     }
   });
@@ -200,7 +200,7 @@ async function main() {
     create: {
       name: 'Cola 500ml', sku: 'COLA-01', barcode: '600000000001',
       categoryId: beverages.id, taxCategoryId: standardTax.id,
-      price: 1.49, costPrice: 0.80, stockQuantity: 120,
+      price: 750, costPrice: 400, stockQuantity: 120,
       lowStockThreshold: 25, unit: Unit.PIECE
     }
   });
@@ -211,7 +211,7 @@ async function main() {
     create: {
       name: 'Water 1L', sku: 'WTR-001', barcode: '600000000002',
       categoryId: beverages.id, taxCategoryId: zeroTax.id,
-      price: 0.89, costPrice: 0.30, stockQuantity: 200,
+      price: 500, costPrice: 250, stockQuantity: 200,
       lowStockThreshold: 50, unit: Unit.PIECE
     }
   });
@@ -222,7 +222,7 @@ async function main() {
     create: {
       name: 'Dish Detergent', sku: 'DTGN-01', barcode: '700000000001',
       categoryId: household.id, taxCategoryId: standardTax.id,
-      price: 3.99, costPrice: 2.20, stockQuantity: 45,
+      price: 3500, costPrice: 2000, stockQuantity: 45,
       lowStockThreshold: 10, unit: Unit.PIECE
     }
   });
@@ -233,7 +233,7 @@ async function main() {
     create: {
       name: 'Craft Beer 330ml', sku: 'BEER-01', barcode: '800000000001',
       categoryId: alcohol.id, taxCategoryId: standardTax.id,
-      price: 5.99, costPrice: 3.50, stockQuantity: 60,
+      price: 7000, costPrice: 4000, stockQuantity: 60,
       lowStockThreshold: 15, unit: Unit.PIECE,
       ageRestricted: true, minAge: 21
     }
@@ -245,7 +245,7 @@ async function main() {
     create: {
       name: 'Red Wine 750ml', sku: 'WINE-01', barcode: '800000000002',
       categoryId: alcohol.id, taxCategoryId: standardTax.id,
-      price: 12.99, costPrice: 7.50, stockQuantity: 25,
+      price: 18000, costPrice: 10000, stockQuantity: 25,
       lowStockThreshold: 8, unit: Unit.PIECE,
       ageRestricted: true, minAge: 21
     }
@@ -284,7 +284,7 @@ async function main() {
       code: 'SAVE10',
       type: CouponType.PERCENT,
       value: 10,
-      minPurchase: 20,
+      minPurchase: 25000,
       active: true
     }
   });
@@ -295,8 +295,8 @@ async function main() {
     create: {
       code: 'FLAT5',
       type: CouponType.FIXED,
-      value: 5,
-      minPurchase: 30,
+      value: 5000,
+      minPurchase: 35000,
       active: true
     }
   });
@@ -322,9 +322,9 @@ async function main() {
     update: {},
     create: {
       id: 'promo-water-multibuy',
-      name: '3 Waters for $2',
+      name: '3 Waters for 1250 IQD',
       type: PromotionType.MULTI_BUY,
-      config: { quantity: 3, price: 2 },
+      config: { quantity: 3, price: 1250 },
       productIds: [],
       categoryIds: [beverages.id],
       active: true,

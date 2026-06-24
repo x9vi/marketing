@@ -32,7 +32,23 @@ const upload = multer({
 });
 
 const app = express();
-app.use(cors({ origin: env.clientUrl, credentials: true }));
+
+function isDevClientOrigin(origin: string) {
+  return /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+}
+
+app.use(
+  cors({
+    origin(origin, callback) {
+      if (!origin || origin === env.clientUrl || isDevClientOrigin(origin)) {
+        callback(null, true);
+        return;
+      }
+      callback(new Error('Not allowed by CORS'));
+    },
+    credentials: true
+  })
+);
 app.use(express.json({ limit: '10mb' }));
 app.use(cookieParser());
 app.use('/uploads', express.static(uploadsDir));
