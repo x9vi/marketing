@@ -5,8 +5,8 @@ import { prisma } from './prisma.js';
 export function signToken(user) {
     return jwt.sign(user, env.jwtSecret, { expiresIn: env.jwtExpiresIn });
 }
-export async function authenticate(email, password) {
-    const user = await prisma.user.findUnique({ where: { email } });
+export async function authenticate(username, password) {
+    const user = await prisma.user.findUnique({ where: { username } });
     if (!user || !user.active)
         return null;
     const valid = await bcrypt.compare(password, user.passwordHash);
@@ -14,7 +14,7 @@ export async function authenticate(email, password) {
         return null;
     const authUser = {
         id: user.id,
-        email: user.email,
+        username: user.username,
         name: user.name,
         role: user.role
     };

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useRef } from 'react';
+import { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { apiFetch, apiUrl } from '../api/client.js';
 import type { Customer, Hold, PaymentMethod, Product, Sale, DiscountType, CashDrawer, ZReport, PromotionMatch } from '../api/types.js';
 import { formatCurrency, formatDate } from '../lib/format.js';
@@ -7,6 +7,7 @@ import { Link } from 'react-router-dom';
 import { InlineCashPanel } from '../components/InlineCashPanel.js';
 import { InlineCardPanel } from '../components/InlineCardPanel.js';
 import { InlineSplitPanel } from '../components/InlineSplitPanel.js';
+import { loadHardwareSettings, popCashDrawer, printSaleReceipt, type HardwareSettings, defaultHardwareSettings } from '../lib/hardware.js';
 
 type CartItem = {
   product: Product;
@@ -336,31 +337,18 @@ const translations = {
   }
 };
 
-const printReceipt = (sale: any, lang: 'en' | 'ku', testMode: boolean, triggerToast?: (msg: string) => void) => {
-  const t = translations[lang];
-
-  if (testMode && triggerToast) {
-    triggerToast(`🖨️ ${t.printSuccess} | 🪙 ${t.drawerSuccess}`);
-  }
-
-  // Create a hidden iframe for printing
-  const iframe = document.createElement('iframe');
-  iframe.style.position = 'absolute';
-  iframe.style.width = '0px';
-  iframe.style.height = '0px';
-  iframe.style.border = 'none';
-  document.body.appendChild(iframe);
-
-  const doc = iframe.contentWindow?.document || iframe.contentDocument;
-  if (!doc) return;
-
+/**
+ * buildReceiptHtml — Generates the 72mm thermal receipt HTML string.
+ * Pure function: no DOM side-effects, reusable by hardware.ts printSaleReceipt().
+ */
+const buildReceiptHtml = (sale: any, lang: 'en' | 'ku', t: typeof translations['en']): string => {
   const isRtl = lang === 'ku';
 
   const itemsHtml = (sale.items || []).map((item: any) => {
     const localizedName = productTranslations[item.sku]?.[lang] || item.productName;
     return `
       <tr>
-        <td style="padding: 4px 0; font-size: 12px; font-family: ${isRtl ? 'monospace' : 'monospace'}; text-align: ${isRtl ? 'right' : 'left'};">
+        <td style="padding: 4px 0; font-size: 12px; font-family: monospace; text-align: ${isRtl ? 'right' : 'left'};">
           ${localizedName}<br/>
           <span style="font-size: 11px; color: #444;">${item.quantity} x ${Number(item.unitPrice).toLocaleString('ar-IQ')} IQD</span>
         </td>
@@ -378,24 +366,17 @@ const printReceipt = (sale: any, lang: 'en' | 'ku', testMode: boolean, triggerTo
     </div>
   `).join('');
 
-  const receiptHtml = `
+  return `
     <html>
       <head>
         <title>Receipt ${sale.receiptNumber}</title>
         <style>
           @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Arabic:wght@400;700&display=swap');
-          @page {
-            margin: 0;
-          }
+          @page { margin: 0; }
           body {
             font-family: ${isRtl ? "'Noto Sans Arabic', monospace" : "monospace"};
-            width: 72mm;
-            margin: 0;
-            padding: 10px;
-            font-size: 12px;
-            line-height: 1.35;
-            color: #000;
-            background: #fff;
+            width: 72mm; margin: 0; padding: 10px;
+            font-size: 12px; line-height: 1.35; color: #000; background: #fff;
             direction: ${isRtl ? 'rtl' : 'ltr'};
           }
           .center { text-align: center; }
@@ -420,15 +401,11 @@ const printReceipt = (sale: any, lang: 'en' | 'ku', testMode: boolean, triggerTo
         </div>
         <div class="divider"></div>
         <table>
-          <thead>
-            <tr>
-              <th class="bold" style="font-size: 12px;">${t.allItems}</th>
-              <th class="bold" style="text-align: ${isRtl ? 'left' : 'right'}; font-size: 12px;">${t.total}</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${itemsHtml}
-          </tbody>
+          <thead><tr>
+            <th class="bold" style="font-size: 12px;">${t.allItems}</th>
+            <th class="bold" style="text-align: ${isRtl ? 'left' : 'right'}; font-size: 12px;">${t.total}</th>
+          </tr></thead>
+          <tbody>${itemsHtml}</tbody>
         </table>
         <div class="divider"></div>
         <div style="display: flex; justify-content: space-between;" class="bold">
@@ -439,14 +416,12 @@ const printReceipt = (sale: any, lang: 'en' | 'ku', testMode: boolean, triggerTo
         <div style="display: flex; justify-content: space-between;">
           <span>${t.discount}:</span>
           <span>-${Number(sale.discountAmount).toLocaleString('ar-IQ')} IQD</span>
-        </div>
-        ` : ''}
+        </div>` : ''}
         ${Number(sale.couponDiscount) > 0 ? `
         <div style="display: flex; justify-content: space-between;">
           <span>${t.coupon}:</span>
           <span>-${Number(sale.couponDiscount).toLocaleString('ar-IQ')} IQD</span>
-        </div>
-        ` : ''}
+        </div>` : ''}
         <div style="display: flex; justify-content: space-between;" class="bold">
           <span>${t.total}:</span>
           <span>${Number(sale.total).toLocaleString('ar-IQ')} IQD</span>
@@ -461,8 +436,7 @@ const printReceipt = (sale: any, lang: 'en' | 'ku', testMode: boolean, triggerTo
         <div style="display: flex; justify-content: space-between; font-size: 11px; margin-top: 4px;">
           <span>${t.pointsEarned}:</span>
           <span>+${sale.pointsEarned}</span>
-        </div>
-        ` : ''}
+        </div>` : ''}
         <div class="divider"></div>
         <div class="center" style="margin-top: 15px; font-size: 11px;">
           ${isRtl ? 'سوپاس بۆ کڕینەکەتان لە فرێش مارت!' : 'Thank you for shopping at FreshMart!'}<br/>
@@ -472,18 +446,13 @@ const printReceipt = (sale: any, lang: 'en' | 'ku', testMode: boolean, triggerTo
       </body>
     </html>
   `;
+};
 
-  doc.open();
-  doc.write(receiptHtml);
-  doc.close();
-
-  setTimeout(() => {
-    iframe.contentWindow?.focus();
-    iframe.contentWindow?.print();
-    setTimeout(() => {
-      document.body.removeChild(iframe);
-    }, 1000);
-  }, 250);
+/** Legacy wrapper — kept so any remaining call sites that pass testMode still work. */
+const printReceipt = (sale: any, lang: 'en' | 'ku', testMode: boolean, triggerToast?: (msg: string) => void) => {
+  const t = translations[lang];
+  if (testMode && triggerToast) triggerToast(`🖨️ ${t.printSuccess} | 🪙 ${t.drawerSuccess}`);
+  printSaleReceipt(buildReceiptHtml(sale, lang, t));
 };
 
 export function POSPage() {
@@ -495,6 +464,9 @@ export function POSPage() {
   const [lang, setLang] = useState<'en' | 'ku'>('en');
   const [testMode, setTestMode] = useState<boolean>(true);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'info' | 'error' } | null>(null);
+
+  // Hardware settings
+  const [hwSettings, setHwSettings] = useState<HardwareSettings>(defaultHardwareSettings);
 
   const t = translations[lang];
   const isRtl = lang === 'ku';
@@ -620,6 +592,8 @@ export function POSPage() {
     void loadCategories();
     void loadProducts();
     void loadHoldsCount();
+    // Load hardware settings (non-blocking, uses defaults on failure)
+    loadHardwareSettings().then(setHwSettings).catch(() => {});
   }, []);
 
   // Keyboard shortcut listener
@@ -1037,8 +1011,30 @@ export function POSPage() {
         })
       });
 
+      // ── Sale saved ── now handle hardware (non-blocking, errors shown as warnings)
+      const hasCash = checkoutPayments.some(p => p.method === 'CASH');
+
+      // 1. Auto pop cash drawer if enabled and payment includes cash
+      if (hasCash && hwSettings.cashDrawer.enabled) {
+        const popResult = await popCashDrawer(hwSettings, 'Sale completed');
+        if (!popResult.ok) {
+          showNotification(`⚠️ ${lang === 'ku' ? 'سندوقی نەختی نەکرایەوە' : 'Cash drawer could not open'}: ${popResult.error ?? ''}`, 'error');
+        } else {
+          showNotification(`🪙 ${lang === 'ku' ? 'سندوقی نەختی کرایەوە' : t.drawerSuccess}`, 'info');
+        }
+      }
+
+      // 2. Print receipt
+      const receiptHtml = buildReceiptHtml(result.sale, lang, t);
+      if (hwSettings.receiptPrinter.enabled) {
+        printSaleReceipt(receiptHtml);
+        showNotification(`🖨️ ${t.printSuccess}`, 'info');
+      } else if (testMode) {
+        printSaleReceipt(receiptHtml);
+        showNotification(`🖨️ ${t.printSuccess} | 🪙 ${t.drawerSuccess}`, 'info');
+      }
+
       setSale(result.sale);
-      printReceipt(result.sale, lang, testMode, showNotification);
       setCart([]);
       setSelectedCustomer(null);
       setHoldId('');
@@ -1058,6 +1054,19 @@ export function POSPage() {
       closeModals();
     }
   };
+
+  // Manual cash drawer pop handler (with PIN guard for cashiers)
+  const handleManualDrawerPop = useCallback((reason?: string) => {
+    const doPopDrawer = async () => {
+      const popResult = await popCashDrawer(hwSettings, reason ?? 'Manual open');
+      if (popResult.ok) {
+        showNotification(`🪙 ${lang === 'ku' ? 'سندوقی نەختی کرایەوە' : t.drawerSuccess}`, 'success');
+      } else {
+        showNotification(`⚠️ ${lang === 'ku' ? 'کرانەوەی سندوق سەرکەوتوو نەبوو' : 'Drawer open failed'}: ${popResult.error ?? ''}`, 'error');
+      }
+    };
+    triggerPINOverride(lang === 'ku' ? 'کرانەوەی سندوق' : 'Open Cash Drawer', () => { void doPopDrawer(); });
+  }, [hwSettings, lang, t]);
 
   // Legacy split handler kept for any keyboard shortcut paths
   const handleSplitCheckoutSubmit = () => {
@@ -1235,29 +1244,30 @@ export function POSPage() {
 
   return (
     <div
-      className="flex h-screen w-screen flex-col overflow-hidden bg-slate-950 text-slate-100 font-sans p-3 select-none"
+      className="flex h-screen w-screen flex-col overflow-hidden font-sans select-none"
+      style={{ padding: '6px', gap: '5px', display: 'flex', flexDirection: 'column', background: '#F8FAFC', color: '#111827' }}
       dir={isRtl ? 'rtl' : 'ltr'}
     >
-      {/* 1. PROFESSIONAL CASHIER TILL HEADER */}
-      <header className="flex h-16 items-center justify-between flex-row rounded-xl bg-slate-900 border border-white/10 px-4 shadow-[0_4px_20px_rgba(0,0,0,0.4)] flex-shrink-0">
+      {/* ── HEADER ── */}
+      <header className="flex h-14 items-center justify-between flex-row rounded-xl px-4 flex-shrink-0" style={{ background: '#FFFFFF', border: '1px solid #E5E7EB', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
         <div className="flex flex-row items-center gap-4">
           <div className="flex items-center gap-3">
-            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-tr from-gold-600 to-gold-400 text-slate-950 text-xl font-black shadow-[0_0_12px_rgba(232,184,79,0.3)]">
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl text-xl font-black" style={{ background: 'linear-gradient(135deg,#2563EB,#1d4ed8)', boxShadow: '0 4px 12px rgba(37,99,235,0.25)' }}>
               🛒
             </span>
             <div>
-              <h1 className="text-sm font-black tracking-tight text-white uppercase flex items-center gap-1.5">
-                FreshMart Terminal <span className="text-[10px] bg-gold-500/10 text-gold-400 border border-gold-500/20 px-1.5 py-0.5 rounded font-mono">SYS-04</span>
+              <h1 className="text-sm font-black tracking-tight uppercase flex items-center gap-1.5" style={{ color: '#111827' }}>
+                FreshMart Terminal <span className="text-[10px] px-1.5 py-0.5 rounded font-mono" style={{ background: '#EFF6FF', color: '#2563EB', border: '1px solid #BFDBFE' }}>SYS-04</span>
               </h1>
-              <p className="text-[10px] font-bold text-slate-400 font-mono">
+              <p className="text-[10px] font-bold font-mono" style={{ color: '#6B7280' }}>
                 {t.station} · {t.cashier}: {user?.name}
               </p>
             </div>
           </div>
-          <div className="h-8 w-[1px] bg-white/10" />
+          <div className="h-8 w-[1px]" style={{ background: '#E5E7EB' }} />
           <div className="flex items-center gap-2">
-            <span className={`h-2.5 w-2.5 rounded-full shadow-[0_0_8px_rgba(74,222,128,0.5)] ${drawer ? 'bg-mint-400 animate-pulse' : 'bg-red-400'}`} />
-            <span className="text-[9px] font-black uppercase tracking-wider text-slate-300">
+            <span className={`h-2.5 w-2.5 rounded-full ${drawer ? 'animate-pulse' : ''}`} style={{ background: drawer ? '#16A34A' : '#DC2626', boxShadow: drawer ? '0 0 6px rgba(22,163,74,0.5)' : 'none' }} />
+            <span className="text-[9px] font-black uppercase tracking-wider" style={{ color: drawer ? '#16A34A' : '#DC2626' }}>
               {drawer ? t.activeSession : t.offlineSession}
             </span>
           </div>
@@ -1265,45 +1275,30 @@ export function POSPage() {
 
         <div className="flex flex-row items-center gap-3">
           {/* Language Switcher */}
-          <div className="flex bg-slate-950 rounded-lg p-0.5 border border-white/5">
+          <div className="flex rounded-lg p-0.5" style={{ background: '#F3F4F6', border: '1px solid #E5E7EB' }}>
             <button
               onClick={() => setLang('en')}
-              className={`px-3 py-1.5 text-[10px] font-black rounded-md transition-all ${
-                lang === 'en' ? 'bg-gold-500 text-slate-950 shadow-md font-bold' : 'text-slate-500 hover:text-white'
-              }`}
+              className="px-3 py-1.5 text-[10px] font-black rounded-md transition-all"
+              style={lang === 'en' ? { background: '#2563EB', color: '#fff', boxShadow: '0 2px 6px rgba(37,99,235,0.3)' } : { color: '#6B7280' }}
             >
               EN
             </button>
             <button
               onClick={() => setLang('ku')}
-              className={`px-3 py-1.5 text-[10px] font-black rounded-md transition-all ${
-                lang === 'ku' ? 'bg-gold-500 text-slate-950 shadow-md font-bold' : 'text-slate-500 hover:text-white'
-              }`}
+              className="px-3 py-1.5 text-[10px] font-black rounded-md transition-all"
+              style={lang === 'ku' ? { background: '#2563EB', color: '#fff', boxShadow: '0 2px 6px rgba(37,99,235,0.3)' } : { color: '#6B7280' }}
             >
               کوردی
             </button>
           </div>
 
-          {/* Hardware Test Mode Trigger */}
-          <button
-            onClick={() => {
-              setTestMode(!testMode);
-              showNotification(testMode ? t.devModeOff : t.devModeOn, 'info');
-            }}
-            className={`rounded-lg px-3 py-1.5 text-[10px] font-black border transition-all ${
-              testMode
-                ? 'bg-mint-500/10 border-mint-500/30 text-mint-400 shadow-[0_0_10px_rgba(74,222,128,0.15)]'
-                : 'bg-slate-950 border-white/5 text-slate-500'
-            }`}
-          >
-            🧪 {testMode ? t.devModeOn : t.devModeOff}
-          </button>
 
           {/* Exit POS back to Admin dashboard */}
           {isAdmin && (
             <Link
               to="/app"
-              className="rounded-lg border border-white/10 bg-slate-950 px-3 py-1.5 text-[10px] font-black text-slate-300 hover:bg-white/5 hover:text-white transition-all"
+              className="rounded-lg px-3 py-1.5 text-[10px] font-black transition-all hover:opacity-80"
+              style={{ background: '#F3F4F6', border: '1px solid #E5E7EB', color: '#374151', textDecoration: 'none' }}
             >
               🚪 {t.exitTerminal}
             </Link>
@@ -1312,347 +1307,363 @@ export function POSPage() {
           {/* Quick logout option */}
           <button
             onClick={() => void logout()}
-            className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-1.5 text-[10px] font-black text-red-400 hover:bg-red-500/20 hover:text-red-300 transition-all"
+            className="rounded-lg px-3 py-1.5 text-[10px] font-black transition-all hover:opacity-80"
+            style={{ background: '#FEF2F2', border: '1px solid #FECACA', color: '#DC2626' }}
           >
             👋 {t.signOut}
           </button>
-
-
         </div>
       </header>
 
-      {/* 2. MAIN POS LAYOUT: Cart | Product Grid | Category Sidebar */}
-      <section className={`flex flex-1 overflow-hidden my-2 min-h-0 gap-0 ${isRtl ? 'flex-row-reverse' : 'flex-row'}`}>
+      {/* ── MAIN LAYOUT: 62% Checkout | 38% Product+Category ── */}
+      <section
+        className={`flex flex-1 overflow-hidden min-h-0 ${isRtl ? 'flex-row-reverse' : 'flex-row'}`}
+        style={{ gap: '5px' }}
+      >
 
-        {/* ── LEFT: CHECKOUT / CART PANEL ── */}
-        <div className="flex flex-col overflow-hidden rounded-l-xl border border-white/10 bg-slate-900/70 shadow-[0_4px_25px_rgba(0,0,0,0.5)]" style={{width:'320px', flexShrink:0}}>
-          {/* Cart panel header */}
-          <div style={{
-            background:'linear-gradient(90deg,#0f172a,#0e1829)',
-            borderBottom:'1px solid rgba(255,255,255,0.07)',
-            padding:'5px 10px',
-            display:'flex',
-            alignItems:'center',
-            justifyContent:'space-between',
-            flexShrink:0,
-          }}>
-            <div style={{display:'flex',alignItems:'center',gap:6}}>
-              <span style={{fontSize:'12px'}}>🧾</span>
-              <span style={{fontSize:'10px',fontWeight:900,color:'#94a3b8',textTransform:'uppercase',letterSpacing:'1px'}}>
-                {isRtl ? 'سەبەتە' : 'CURRENT SALE'}
+        {/* ─────────── CHECKOUT PANEL (~62%) ─────────── */}
+        <div style={{ flex: '62 0 0', minWidth: 0, display: 'flex', flexDirection: 'column', background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+
+          {/* Cart Header */}
+          <div style={{ background: '#F8FAFC', borderBottom: '1px solid #E5E7EB', padding: '6px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: '14px' }}>🧾</span>
+              <span style={{ fontSize: '11px', fontWeight: 800, color: '#111827', textTransform: 'uppercase', letterSpacing: '1.5px' }}>
+                {isRtl ? 'سەبەتەی ئێستا' : 'CURRENT SALE'}
               </span>
             </div>
-            <span style={{
-              fontSize:'8px', fontWeight:700, color:'#475569', fontFamily:'monospace',
-            }}>
-              {cart.reduce((s,i)=>s+i.quantity,0)} {isRtl?'بابەت':'items'}
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: '11px', fontWeight: 600, color: '#6B7280', fontFamily: 'monospace' }}>
+                {cart.reduce((s, i) => s + i.quantity, 0)} {isRtl ? 'بابەت' : 'items'}
+              </span>
+              {drawer && (
+                <span style={{ fontSize: '8px', color: '#16A34A', fontWeight: 700, background: '#ECFDF5', border: '1px solid #BBF7D0', padding: '1px 6px', borderRadius: '4px', fontFamily: 'monospace' }}>
+                  ● LIVE
+                </span>
+              )}
+            </div>
           </div>
 
-          {/* Active Loyalty Customer Badge */}
+          {/* Customer Badge */}
           {selectedCustomer && (
-            <div className="border-b border-white/5 bg-slate-950/60 px-2 py-1.5">
-              <div className="flex items-center justify-between rounded bg-gold-500/10 border border-gold-500/20 px-2 py-1 text-xs">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-sm">👤</span>
+            <div style={{ borderBottom: '1px solid #E5E7EB', background: '#FFFBEB', padding: '4px 12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#FEF9C3', border: '1px solid #FDE68A', borderRadius: '6px', padding: '4px 10px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: '14px' }}>👤</span>
                   <div>
-                    <p className="font-extrabold text-white text-[10px] leading-none">{selectedCustomer.name}</p>
-                    <p className="text-[8px] text-slate-400 font-mono mt-0.5">
+                    <p style={{ fontSize: '12px', fontWeight: 800, color: '#111827', margin: 0, lineHeight: 1.2 }}>{selectedCustomer.name}</p>
+                    <p style={{ fontSize: '9px', color: '#6B7280', fontFamily: 'monospace', margin: 0 }}>
                       {t.points}: {selectedCustomer.loyaltyPoints}
                     </p>
                   </div>
                 </div>
                 <button
-                  onClick={() => {
-                    setSelectedCustomer(null);
-                    setPointsToRedeem('0');
-                  }}
-                  className="text-red-400 hover:text-red-300 text-xs font-bold"
-                >
-                  ✕
-                </button>
+                  onClick={() => { setSelectedCustomer(null); setPointsToRedeem('0'); }}
+                  style={{ color: '#DC2626', fontSize: '13px', fontWeight: 700, background: 'none', border: 'none', cursor: 'pointer', padding: '2px 5px' }}
+                >✕</button>
               </div>
             </div>
           )}
 
-          {/* Cart Items List — compact receipt-tape style */}
-          <div className="flex-1 overflow-y-auto scrollbar-thin" style={{padding:'4px 6px'}}>
+          {/* Cart Items Table */}
+          <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'thin', scrollbarColor: '#D1D5DB transparent' }}>
             {cart.length === 0 ? (
-              <div className="flex h-full flex-col items-center justify-center text-slate-500 gap-2">
-                <span className="text-3xl">📄</span>
-                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                  {isRtl ? 'سەبەتە بەتاڵە' : 'TICKET EMPTY - SCAN ITEMS'}
+              <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+                <span style={{ fontSize: '40px', opacity: 0.12 }}>🧾</span>
+                <p style={{ fontSize: '11px', fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '2px', margin: 0 }}>
+                  {isRtl ? 'سەبەتە بەتاڵ — بابەت سکان بکە' : 'TICKET EMPTY — SCAN ITEMS'}
                 </p>
               </div>
             ) : (
-              <div style={{display:'flex',flexDirection:'column',gap:'2px'}}>
-                {cart.map((item) => {
-                  const lineTotal = Number(item.product.price) * item.quantity;
-                  const itemLabel = item.product.unit === 'KG' ? 'kg' : item.product.unit === 'LITER' ? 'L' : 'pc';
-                  const localizedName = productTranslations[item.product.sku]?.[lang] || item.product.name;
+              <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+                <colgroup>
+                  <col style={{ width: 'auto' }} />
+                  <col style={{ width: '80px' }} />
+                  <col style={{ width: '100px' }} />
+                  <col style={{ width: '95px' }} />
+                  <col style={{ width: '34px' }} />
+                </colgroup>
+                <thead>
+                  <tr style={{ background: '#F1F5F9', borderBottom: '2px solid #E2E8F0', position: 'sticky', top: 0, zIndex: 1 }}>
+                    <th style={{ padding: '5px 10px 5px 14px', textAlign: 'left', fontSize: '9px', fontWeight: 800, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.8px' }}>
+                      {isRtl ? 'بابەت' : 'Item'}
+                    </th>
+                    <th style={{ padding: '5px 4px', textAlign: 'center', fontSize: '9px', fontWeight: 800, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.8px' }}>
+                      {isRtl ? 'ژمارە' : 'Qty'}
+                    </th>
+                    <th style={{ padding: '5px 4px', textAlign: 'right', fontSize: '9px', fontWeight: 800, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.8px' }}>
+                      {isRtl ? 'نرخ' : 'Unit Price'}
+                    </th>
+                    <th style={{ padding: '5px 10px 5px 4px', textAlign: 'right', fontSize: '9px', fontWeight: 800, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.8px' }}>
+                      {isRtl ? 'کۆ' : 'Total'}
+                    </th>
+                    <th style={{ width: 34 }} />
+                  </tr>
+                </thead>
+                <tbody>
+                  {cart.map((item, idx) => {
+                    const lineTotal = Number(item.product.price) * item.quantity;
+                    const itemLabel = item.product.unit === 'KG' ? 'kg' : item.product.unit === 'LITER' ? 'L' : '';
+                    const localizedName = productTranslations[item.product.sku]?.[lang] || item.product.name;
 
-                  return (
-                    <div
-                      key={item.product.id}
-                      style={{
-                        background:'rgba(15,23,42,0.7)',
-                        borderBottom:'1px solid rgba(255,255,255,0.05)',
-                        padding:'4px 6px',
-                      }}
-                    >
-                      {/* Name row */}
-                      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:4}}>
-                        <span style={{
-                          fontSize:'10px',fontWeight:800,color:'#e2e8f0',
-                          overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',
-                          flex:1, minWidth:0,
-                          direction: isRtl ? 'rtl' : 'ltr',
-                        }}>{localizedName}</span>
-                        <button
-                          onClick={() => handleRemoveCartItem(item.product.id)}
-                          style={{color:'#475569',fontSize:'9px',fontWeight:900,flexShrink:0,padding:'0 2px'}}
-                          title={t.remove}
-                        >✕</button>
-                      </div>
-                      {/* Qty + price row */}
-                      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginTop:'2px'}}>
-                        <div style={{display:'flex',alignItems:'center',gap:'2px'}}>
-                          <button
-                            onClick={() => {
-                              if (item.quantity <= 1) {
-                                handleRemoveCartItem(item.product.id);
-                              } else {
+                    return (
+                      <tr
+                        key={item.product.id}
+                        style={{
+                          background: idx % 2 === 0 ? '#FFFFFF' : '#F8FAFC',
+                          borderBottom: '1px solid #F1F5F9',
+                          transition: 'background 0.1s',
+                        }}
+                      >
+                        {/* Item Name + SKU */}
+                        <td style={{ padding: '6px 10px 6px 14px', verticalAlign: 'middle' }}>
+                          <div style={{ fontSize: '12.5px', fontWeight: 700, color: '#1E293B', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', direction: isRtl ? 'rtl' : 'ltr', lineHeight: 1.3 }}>
+                            {localizedName}
+                          </div>
+                          <div style={{ fontSize: '9px', color: '#94A3B8', fontFamily: 'monospace', marginTop: 1, letterSpacing: '0.2px' }}>
+                            {item.product.sku}{itemLabel ? ` · ${itemLabel}` : ''}
+                          </div>
+                        </td>
+
+                        {/* Qty Controls */}
+                        <td style={{ padding: '6px 4px', textAlign: 'center', verticalAlign: 'middle' }}>
+                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 3, background: '#F1F5F9', borderRadius: '7px', padding: '2px 3px' }}>
+                            <button
+                              onClick={() => {
+                                if (item.quantity <= 1) {
+                                  handleRemoveCartItem(item.product.id);
+                                } else {
+                                  setCart((curr) =>
+                                    curr.map((c) =>
+                                      c.product.id === item.product.id ? { ...c, quantity: c.quantity - 1 } : c
+                                    )
+                                  );
+                                }
+                              }}
+                              style={{ width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#FFFFFF', border: '1px solid #CBD5E1', borderRadius: '5px', color: '#475569', fontSize: '14px', fontWeight: 900, cursor: 'pointer', flexShrink: 0, lineHeight: 1 }}
+                            >−</button>
+                            <span style={{ minWidth: 28, textAlign: 'center', fontSize: '13px', fontFamily: 'monospace', fontWeight: 800, color: '#0F172A', lineHeight: 1 }}>
+                              {item.product.unit === 'KG' || item.product.unit === 'LITER'
+                                ? item.quantity.toFixed(2)
+                                : item.quantity}
+                            </span>
+                            <button
+                              onClick={() =>
                                 setCart((curr) =>
                                   curr.map((c) =>
-                                    c.product.id === item.product.id ? { ...c, quantity: c.quantity - 1 } : c
+                                    c.product.id === item.product.id ? { ...c, quantity: c.quantity + 1 } : c
                                   )
-                                );
-                              }
-                            }}
-                            style={{
-                              width:18,height:18,display:'flex',alignItems:'center',justifyContent:'center',
-                              background:'rgba(255,255,255,0.06)',border:'1px solid rgba(255,255,255,0.1)',
-                              borderRadius:2,color:'#94a3b8',fontSize:'11px',fontWeight:900,cursor:'pointer',
-                            }}
-                          >−</button>
-                          <span style={{
-                            width:32,textAlign:'center',fontSize:'11px',fontFamily:'monospace',
-                            fontWeight:900,color:'#fff',
-                          }}>
-                            {item.product.unit === 'KG' || item.product.unit === 'LITER'
-                              ? item.quantity.toFixed(2)
-                              : item.quantity}{itemLabel}
-                          </span>
-                          <button
-                            onClick={() => {
-                              setCart((curr) =>
-                                curr.map((c) =>
-                                  c.product.id === item.product.id ? { ...c, quantity: c.quantity + 1 } : c
                                 )
-                              );
-                            }}
+                              }
+                              style={{ width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#FFFFFF', border: '1px solid #CBD5E1', borderRadius: '5px', color: '#475569', fontSize: '14px', fontWeight: 900, cursor: 'pointer', flexShrink: 0, lineHeight: 1 }}
+                            >+</button>
+                          </div>
+                        </td>
+
+                        {/* Unit Price */}
+                        <td style={{ padding: '6px 4px', textAlign: 'right', verticalAlign: 'middle' }}>
+                          <span style={{ fontSize: '11.5px', fontFamily: 'monospace', fontWeight: 600, color: '#64748B' }}>
+                            {formatCurrency(Number(item.product.price))}
+                          </span>
+                        </td>
+
+                        {/* Line Total */}
+                        <td style={{ padding: '6px 10px 6px 4px', textAlign: 'right', verticalAlign: 'middle' }}>
+                          <span style={{ fontSize: '13px', fontFamily: 'monospace', fontWeight: 800, color: '#16A34A', letterSpacing: '-0.3px' }}>
+                            {formatCurrency(lineTotal)}
+                          </span>
+                        </td>
+
+                        {/* Delete */}
+                        <td style={{ padding: '6px 6px 6px 0', textAlign: 'center', verticalAlign: 'middle' }}>
+                          <button
+                            onClick={() => handleRemoveCartItem(item.product.id)}
+                            title={t.remove}
                             style={{
-                              width:18,height:18,display:'flex',alignItems:'center',justifyContent:'center',
-                              background:'rgba(255,255,255,0.06)',border:'1px solid rgba(255,255,255,0.1)',
-                              borderRadius:2,color:'#94a3b8',fontSize:'11px',fontWeight:900,cursor:'pointer',
+                              width: 22, height: 22,
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              background: '#FEE2E2', border: '1px solid #FECACA',
+                              borderRadius: '5px', color: '#EF4444',
+                              fontSize: '10px', fontWeight: 900,
+                              cursor: 'pointer', lineHeight: 1, flexShrink: 0,
                             }}
-                          >+</button>
-                        </div>
-                        <span style={{
-                          fontSize:'11px',fontFamily:'monospace',fontWeight:900,
-                          color:'#fbbf24',letterSpacing:'-0.3px',
-                        }}>{formatCurrency(lineTotal)}</span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+                          >✕</button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             )}
           </div>
 
-          {/* ── Checkout Totals & Transaction Control Center ── */}
-          <div style={{
-            borderTop: '1px solid rgba(255,255,255,0.08)',
-            background: '#070a12',
-            flexShrink: 0,
-          }}>
+          {/* ── TOTALS + PAYMENT SECTION ── */}
+          <div style={{ borderTop: '2px solid #E2E8F0', background: '#FFFFFF', flexShrink: 0, overflowY: 'auto' }}>
 
-            {/* ── TOTALS STRIP ── */}
-            <div style={{padding:'6px 10px 4px', borderBottom:'1px solid rgba(255,255,255,0.05)'}}>
-              {/* Subtotal / Discount / Tax rows */}
-              <div style={{display:'flex',flexDirection:'column',gap:'2px',marginBottom:'4px'}}>
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                  <span style={{fontSize:'9px',color:'#64748b',fontWeight:600,textTransform:'uppercase',letterSpacing:'0.5px'}}>{t.subtotal}</span>
-                  <span style={{fontSize:'10px',color:'#cbd5e1',fontFamily:'monospace',fontWeight:700}}>{formatCurrency(subtotal)}</span>
-                </div>
-                {Number(pointsToRedeem) > 0 && selectedCustomer && (
-                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                    <span style={{fontSize:'9px',color:'#f87171',fontWeight:600}}>{t.pointsRedeemed} ({pointsToRedeem}pts)</span>
-                    <span style={{fontSize:'10px',color:'#f87171',fontFamily:'monospace',fontWeight:700}}>−{formatCurrency(customerRedeemable)}</span>
+            {/* Optional discount/promo lines – only shown when active */}
+            {(Number(pointsToRedeem) > 0 && selectedCustomer) || (manualDiscount > 0 || couponDiscount > 0) || promoDiscount > 0 ? (
+              <div style={{ padding: '5px 12px 0', display: 'flex', flexDirection: 'column', gap: 2 }}>
+                {(Number(pointsToRedeem) > 0 && selectedCustomer) && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '10px', color: '#DC2626', fontWeight: 600 }}>{t.pointsRedeemed} ({pointsToRedeem}pts)</span>
+                    <span style={{ fontSize: '10px', color: '#DC2626', fontFamily: 'monospace', fontWeight: 700 }}>−{formatCurrency(customerRedeemable)}</span>
                   </div>
                 )}
                 {(manualDiscount > 0 || couponDiscount > 0) && (
-                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                    <span style={{fontSize:'9px',color:'#f87171',fontWeight:600}}>{t.discount}</span>
-                    <span style={{fontSize:'10px',color:'#f87171',fontFamily:'monospace',fontWeight:700}}>−{formatCurrency(manualDiscount + couponDiscount)}</span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '10px', color: '#DC2626', fontWeight: 600 }}>{t.discount}</span>
+                    <span style={{ fontSize: '10px', color: '#DC2626', fontFamily: 'monospace', fontWeight: 700 }}>−{formatCurrency(manualDiscount + couponDiscount)}</span>
                   </div>
                 )}
                 {promoDiscount > 0 && (
-                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                    <span style={{fontSize:'9px',color:'#34d399',fontWeight:600}}>Auto Promos</span>
-                    <span style={{fontSize:'10px',color:'#34d399',fontFamily:'monospace',fontWeight:700}}>−{formatCurrency(promoDiscount)}</span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '10px', color: '#16A34A', fontWeight: 600 }}>Auto Promos</span>
+                    <span style={{ fontSize: '10px', color: '#16A34A', fontFamily: 'monospace', fontWeight: 700 }}>−{formatCurrency(promoDiscount)}</span>
                   </div>
                 )}
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                  <span style={{fontSize:'9px',color:'#64748b',fontWeight:600,textTransform:'uppercase',letterSpacing:'0.5px'}}>{t.tax}</span>
-                  <span style={{fontSize:'10px',color:'#94a3b8',fontFamily:'monospace',fontWeight:700}}>{formatCurrency(taxBreakdown)}</span>
-                </div>
               </div>
+            ) : null}
 
-              {/* Grand Total — compact LED bar */}
-              <div style={{
-                display:'flex', alignItems:'center', justifyContent:'space-between',
-                background:'linear-gradient(90deg,#052e16,#064e3b)',
-                border:'1px solid rgba(52,211,153,0.2)',
-                borderRadius:'5px',
-                padding:'5px 10px',
-              }}>
-                <span style={{fontSize:'9px',color:'#6ee7b7',fontWeight:900,textTransform:'uppercase',letterSpacing:'1.5px'}}>{t.total}</span>
-                <span style={{fontSize:'20px',color:'#34d399',fontFamily:'monospace',fontWeight:900,letterSpacing:'-1px',lineHeight:1}}>{formatCurrency(total)}</span>
+            {/* GRAND TOTAL BAR */}
+            <div style={{ margin: '6px 10px 4px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'linear-gradient(135deg, #DCFCE7, #BBF7D0)', border: '1.5px solid #4ADE80', borderRadius: '10px', padding: '9px 14px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+                <span style={{ fontSize: '9px', color: '#15803D', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '2.5px' }}>
+                  {isRtl ? 'کۆی گشتی' : 'TOTAL'}
+                </span>
+                <span style={{ fontSize: '9px', color: '#86EFAC', fontFamily: 'monospace', fontWeight: 600 }}>
+                  {cart.length} {isRtl ? 'بابەت' : 'items'}
+                </span>
               </div>
-
-              {/* Loyalty points slider — only when customer has points */}
-              {selectedCustomer && selectedCustomer.loyaltyPoints > 0 && (
-                <div style={{marginTop:'4px',background:'rgba(255,255,255,0.03)',border:'1px solid rgba(255,255,255,0.06)',borderRadius:'4px',padding:'4px 6px'}}>
-                  <div style={{display:'flex',justifyContent:'space-between',marginBottom:'2px'}}>
-                    <span style={{fontSize:'8px',color:'#475569',fontFamily:'monospace'}}>Redeem (Max {selectedCustomer.loyaltyPoints} pts)</span>
-                    <span style={{fontSize:'8px',color:'#fbbf24',fontWeight:700,fontFamily:'monospace'}}>−{formatCurrency(customerRedeemable)}</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0"
-                    max={selectedCustomer.loyaltyPoints}
-                    value={pointsToRedeem}
-                    onChange={(e) => handleRedeemPointsChange(e.target.value)}
-                    style={{width:'100%',height:'3px',accentColor:'#d97706',cursor:'pointer',display:'block'}}
-                  />
-                </div>
-              )}
+              <span style={{ fontSize: '30px', color: '#15803D', fontFamily: 'monospace', fontWeight: 900, letterSpacing: '-1px', lineHeight: 1 }}>
+                {formatCurrency(total)}
+              </span>
             </div>
 
-            {/* ── PAYMENT BUTTONS ── (shown when menu view) */}
+            {/* Loyalty points slider */}
+            {selectedCustomer && selectedCustomer.loyaltyPoints > 0 && (
+              <div style={{ margin: '0 10px 4px', background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: '6px', padding: '4px 10px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
+                  <span style={{ fontSize: '9px', color: '#6B7280', fontFamily: 'monospace' }}>Redeem (Max {selectedCustomer.loyaltyPoints} pts)</span>
+                  <span style={{ fontSize: '9px', color: '#D97706', fontWeight: 700, fontFamily: 'monospace' }}>−{formatCurrency(customerRedeemable)}</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max={selectedCustomer.loyaltyPoints}
+                  value={pointsToRedeem}
+                  onChange={(e) => handleRedeemPointsChange(e.target.value)}
+                  style={{ width: '100%', height: '3px', accentColor: '#D97706', cursor: 'pointer', display: 'block' }}
+                />
+              </div>
+            )}
+
+            {/* ── PAYMENT BUTTONS (menu view) ── */}
             <div style={{
               overflow: 'hidden',
               maxHeight: checkoutView === 'menu' ? '400px' : '0px',
               opacity: checkoutView === 'menu' ? 1 : 0,
               transition: 'max-height 0.3s cubic-bezier(0.4,0,0.2,1), opacity 0.2s ease',
             }}>
-              <div style={{padding:'6px 8px', display:'flex', flexDirection:'column', gap:'5px'}}>
+              <div style={{ padding: '0 10px 8px', display: 'flex', flexDirection: 'column', gap: 5 }}>
 
-                {/* PRIMARY ROW: Cash | Card | Split — 3 equal columns */}
-                <div style={{display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:'4px'}}>
-                  {/* CASH */}
+                {/* PRIMARY ROW: Cash | Card | Split */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
+                  {/* Cash */}
                   <button
                     id="pos-cash-payment-btn"
                     onClick={() => setCheckoutView('cash')}
                     disabled={!cart.length || !drawer}
                     style={{
-                      display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
-                      gap:'1px', padding:'7px 4px',
-                      background:'linear-gradient(160deg,#064e3b,#065f46)',
-                      border:'1px solid rgba(52,211,153,0.3)',
-                      borderRadius:'5px',
-                      color:'#34d399',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+                      height: '50px',
+                      background: 'linear-gradient(160deg, #22C55E, #16A34A)',
+                      border: 'none', borderRadius: '10px', color: '#fff',
                       cursor: (!cart.length || !drawer) ? 'not-allowed' : 'pointer',
-                      opacity: (!cart.length || !drawer) ? 0.35 : 1,
-                      transition:'opacity 0.1s, transform 0.08s',
+                      opacity: (!cart.length || !drawer) ? 0.4 : 1,
+                      transition: 'transform 0.1s, opacity 0.15s',
+                      boxShadow: '0 3px 10px rgba(22,163,74,0.35)',
                     }}
-                    onMouseDown={e => { if (cart.length && drawer) (e.currentTarget as HTMLElement).style.transform='scale(0.96)'; }}
-                    onMouseUp={e => { (e.currentTarget as HTMLElement).style.transform='scale(1)'; }}
+                    onMouseDown={e => { if (cart.length && drawer) (e.currentTarget as HTMLElement).style.transform = 'scale(0.97)'; }}
+                    onMouseUp={e => { (e.currentTarget as HTMLElement).style.transform = 'scale(1)'; }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = 'scale(1)'; }}
                   >
-                    <span style={{fontSize:'14px',lineHeight:1}}>💵</span>
-                    <span style={{fontSize:'9px',fontWeight:900,textTransform:'uppercase',letterSpacing:'0.3px'}}>
+                    <span style={{ fontSize: '18px', lineHeight: 1 }}>💵</span>
+                    <span style={{ fontSize: '13px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.8px' }}>
                       {lang === 'ku' ? 'نەخت' : 'Cash'}
                     </span>
-                    <span style={{fontSize:'7px',color:'rgba(52,211,153,0.5)',fontFamily:'monospace'}}>[F3]</span>
                   </button>
 
-                  {/* CARD */}
+                  {/* Card */}
                   <button
                     id="pos-card-payment-btn"
                     onClick={() => setCheckoutView('card')}
                     disabled={!cart.length || !drawer}
                     style={{
-                      display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
-                      gap:'1px', padding:'7px 4px',
-                      background:'linear-gradient(160deg,#1e1b4b,#312e81)',
-                      border:'1px solid rgba(99,102,241,0.3)',
-                      borderRadius:'5px',
-                      color:'#818cf8',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+                      height: '50px',
+                      background: 'linear-gradient(160deg, #3B82F6, #1D4ED8)',
+                      border: 'none', borderRadius: '10px', color: '#fff',
                       cursor: (!cart.length || !drawer) ? 'not-allowed' : 'pointer',
-                      opacity: (!cart.length || !drawer) ? 0.35 : 1,
-                      transition:'opacity 0.1s, transform 0.08s',
+                      opacity: (!cart.length || !drawer) ? 0.4 : 1,
+                      transition: 'transform 0.1s, opacity 0.15s',
+                      boxShadow: '0 3px 10px rgba(37,99,235,0.35)',
                     }}
-                    onMouseDown={e => { if (cart.length && drawer) (e.currentTarget as HTMLElement).style.transform='scale(0.96)'; }}
-                    onMouseUp={e => { (e.currentTarget as HTMLElement).style.transform='scale(1)'; }}
+                    onMouseDown={e => { if (cart.length && drawer) (e.currentTarget as HTMLElement).style.transform = 'scale(0.97)'; }}
+                    onMouseUp={e => { (e.currentTarget as HTMLElement).style.transform = 'scale(1)'; }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = 'scale(1)'; }}
                   >
-                    <span style={{fontSize:'14px',lineHeight:1}}>💳</span>
-                    <span style={{fontSize:'9px',fontWeight:900,textTransform:'uppercase',letterSpacing:'0.3px'}}>
+                    <span style={{ fontSize: '18px', lineHeight: 1 }}>💳</span>
+                    <span style={{ fontSize: '13px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.8px' }}>
                       {lang === 'ku' ? 'کارت' : 'Card'}
                     </span>
-                    <span style={{fontSize:'7px',color:'rgba(99,102,241,0.5)',fontFamily:'monospace'}}>[F3]</span>
                   </button>
 
-                  {/* SPLIT */}
+                  {/* Split */}
                   <button
                     id="pos-split-payment-btn"
                     onClick={() => setCheckoutView('split')}
                     disabled={!cart.length || !drawer}
                     style={{
-                      display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
-                      gap:'1px', padding:'7px 4px',
-                      background:'linear-gradient(160deg,#3b1f5e,#4c1d95)',
-                      border:'1px solid rgba(168,85,247,0.25)',
-                      borderRadius:'5px',
-                      color:'#c084fc',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+                      height: '50px',
+                      background: 'linear-gradient(160deg, #8B5CF6, #6D28D9)',
+                      border: 'none', borderRadius: '10px', color: '#fff',
                       cursor: (!cart.length || !drawer) ? 'not-allowed' : 'pointer',
-                      opacity: (!cart.length || !drawer) ? 0.35 : 1,
-                      transition:'opacity 0.1s, transform 0.08s',
+                      opacity: (!cart.length || !drawer) ? 0.4 : 1,
+                      transition: 'transform 0.1s, opacity 0.15s',
+                      boxShadow: '0 3px 10px rgba(109,40,217,0.35)',
                     }}
-                    onMouseDown={e => { if (cart.length && drawer) (e.currentTarget as HTMLElement).style.transform='scale(0.96)'; }}
-                    onMouseUp={e => { (e.currentTarget as HTMLElement).style.transform='scale(1)'; }}
+                    onMouseDown={e => { if (cart.length && drawer) (e.currentTarget as HTMLElement).style.transform = 'scale(0.97)'; }}
+                    onMouseUp={e => { (e.currentTarget as HTMLElement).style.transform = 'scale(1)'; }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = 'scale(1)'; }}
                   >
-                    <span style={{fontSize:'14px',lineHeight:1}}>⚖️</span>
-                    <span style={{fontSize:'9px',fontWeight:900,textTransform:'uppercase',letterSpacing:'0.3px'}}>
+                    <span style={{ fontSize: '18px', lineHeight: 1 }}>⚖️</span>
+                    <span style={{ fontSize: '13px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.8px' }}>
                       {lang === 'ku' ? 'دووبەش' : 'Split'}
                     </span>
-                    <span style={{fontSize:'7px',color:'rgba(168,85,247,0.45)',fontFamily:'monospace'}}>Mix</span>
                   </button>
                 </div>
 
-                {/* SECONDARY 2×2 GRID: Exact Cash | Recall | Park | Void */}
-                <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'3px'}}>
+                {/* SECONDARY ROW: 4-in-a-row compact action buttons */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 5 }}>
+
                   {/* Exact Cash [F2] */}
                   <button
                     onClick={() => { if (cart.length && drawer) { void triggerCheckout(true); } }}
                     disabled={!cart.length || !drawer}
                     style={{
-                      display:'flex', alignItems:'center', justifyContent:'center', gap:'4px',
-                      padding:'5px 6px',
-                      background:'rgba(6,78,59,0.25)',
-                      border:'1px solid rgba(52,211,153,0.12)',
-                      borderRadius:'4px',
-                      color:'#6ee7b7',
-                      fontSize:'9px', fontWeight:700,
+                      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2,
+                      height: '40px',
+                      background: '#F0FDF4', border: '1px solid #BBF7D0',
+                      borderRadius: '8px', color: '#15803D',
                       cursor: (!cart.length || !drawer) ? 'not-allowed' : 'pointer',
-                      opacity: (!cart.length || !drawer) ? 0.3 : 1,
-                      transition:'background 0.1s',
+                      opacity: (!cart.length || !drawer) ? 0.4 : 1,
+                      transition: 'background 0.1s',
                     }}
                   >
-                    <span style={{fontSize:'11px'}}>⚡</span>
-                    <span style={{lineHeight:1}}>
+                    <span style={{ fontSize: '12px', lineHeight: 1 }}>⚡</span>
+                    <span style={{ fontSize: '8.5px', fontWeight: 800, textAlign: 'center', lineHeight: 1.2, color: '#15803D' }}>
                       {lang === 'ku' ? 'نەختی تەواو' : 'Exact Cash'}
-                      <span style={{display:'block',fontSize:'7px',color:'rgba(110,231,183,0.4)',fontFamily:'monospace',lineHeight:1}}>[F2]</span>
                     </span>
                   </button>
 
@@ -1660,21 +1671,23 @@ export function POSPage() {
                   <button
                     onClick={() => { void loadHoldsCount(); setActiveModal('holds'); }}
                     style={{
-                      display:'flex', alignItems:'center', justifyContent:'center', gap:'4px',
-                      padding:'5px 6px',
-                      background: holdsCount > 0 ? 'rgba(120,85,0,0.25)' : 'rgba(255,255,255,0.03)',
-                      border: holdsCount > 0 ? '1px solid rgba(251,191,36,0.25)' : '1px solid rgba(255,255,255,0.07)',
-                      borderRadius:'4px',
-                      color: holdsCount > 0 ? '#fbbf24' : '#475569',
-                      fontSize:'9px', fontWeight:700,
-                      cursor:'pointer',
-                      transition:'background 0.1s',
+                      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2,
+                      height: '40px',
+                      background: holdsCount > 0 ? '#FFFBEB' : '#F9FAFB',
+                      border: holdsCount > 0 ? '1px solid #FDE68A' : '1px solid #E5E7EB',
+                      borderRadius: '8px',
+                      color: holdsCount > 0 ? '#B45309' : '#6B7280',
+                      cursor: 'pointer',
+                      transition: 'background 0.1s',
+                      position: 'relative',
                     }}
                   >
-                    <span style={{fontSize:'11px'}}>📥</span>
-                    <span style={{lineHeight:1}}>
+                    {holdsCount > 0 && (
+                      <span style={{ position: 'absolute', top: 4, right: 5, fontSize: '7px', background: '#F59E0B', color: '#fff', borderRadius: '8px', padding: '0px 4px', fontWeight: 800, fontFamily: 'monospace' }}>{holdsCount}</span>
+                    )}
+                    <span style={{ fontSize: '12px', lineHeight: 1 }}>📥</span>
+                    <span style={{ fontSize: '8.5px', fontWeight: 800, textAlign: 'center', lineHeight: 1.2, color: 'inherit' }}>
                       {lang === 'ku' ? 'هێنانەوە' : 'Recall'}
-                      <span style={{display:'block',fontSize:'7px',color: holdsCount > 0 ? 'rgba(251,191,36,0.5)' : 'rgba(255,255,255,0.15)',fontFamily:'monospace',lineHeight:1}}>({holdsCount})</span>
                     </span>
                   </button>
 
@@ -1683,22 +1696,18 @@ export function POSPage() {
                     onClick={() => void saveHold()}
                     disabled={!cart.length}
                     style={{
-                      display:'flex', alignItems:'center', justifyContent:'center', gap:'4px',
-                      padding:'5px 6px',
-                      background:'rgba(255,255,255,0.03)',
-                      border:'1px solid rgba(255,255,255,0.07)',
-                      borderRadius:'4px',
-                      color:'#64748b',
-                      fontSize:'9px', fontWeight:700,
+                      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2,
+                      height: '40px',
+                      background: '#F8FAFC', border: '1px solid #E2E8F0',
+                      borderRadius: '8px', color: '#475569',
                       cursor: !cart.length ? 'not-allowed' : 'pointer',
-                      opacity: !cart.length ? 0.3 : 1,
-                      transition:'background 0.1s',
+                      opacity: !cart.length ? 0.4 : 1,
+                      transition: 'background 0.1s',
                     }}
                   >
-                    <span style={{fontSize:'11px'}}>📂</span>
-                    <span style={{lineHeight:1}}>
+                    <span style={{ fontSize: '12px', lineHeight: 1 }}>📂</span>
+                    <span style={{ fontSize: '8.5px', fontWeight: 800, textAlign: 'center', lineHeight: 1.2, color: 'inherit' }}>
                       {lang === 'ku' ? 'ڕاگرتن' : 'Park'}
-                      <span style={{display:'block',fontSize:'7px',color:'rgba(255,255,255,0.15)',fontFamily:'monospace',lineHeight:1}}>[F5]</span>
                     </span>
                   </button>
 
@@ -1707,32 +1716,55 @@ export function POSPage() {
                     onClick={handleVoidTransaction}
                     disabled={!cart.length}
                     style={{
-                      display:'flex', alignItems:'center', justifyContent:'center', gap:'4px',
-                      padding:'5px 6px',
-                      background:'rgba(239,68,68,0.06)',
-                      border:'1px solid rgba(239,68,68,0.15)',
-                      borderRadius:'4px',
-                      color:'#f87171',
-                      fontSize:'9px', fontWeight:700,
+                      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2,
+                      height: '40px',
+                      background: '#FFF5F5', border: '1px solid #FECACA',
+                      borderRadius: '8px', color: '#DC2626',
                       cursor: !cart.length ? 'not-allowed' : 'pointer',
-                      opacity: !cart.length ? 0.3 : 1,
-                      transition:'background 0.1s',
+                      opacity: !cart.length ? 0.4 : 1,
+                      transition: 'background 0.1s',
                     }}
                   >
-                    <span style={{fontSize:'11px'}}>🚫</span>
-                    <span style={{lineHeight:1}}>
+                    <span style={{ fontSize: '12px', lineHeight: 1 }}>🚫</span>
+                    <span style={{ fontSize: '8.5px', fontWeight: 800, textAlign: 'center', lineHeight: 1.2, color: 'inherit' }}>
                       {lang === 'ku' ? 'پوچەڵکردن' : 'Void'}
-                      <span style={{display:'block',fontSize:'7px',color:'rgba(239,68,68,0.35)',fontFamily:'monospace',lineHeight:1}}>[F8]</span>
                     </span>
                   </button>
+
                 </div>
+
+                {/* TERTIARY ROW: Manual Open Cash Drawer */}
+                {drawer && (
+                  <div style={{ display: 'flex', gap: 5 }}>
+                    <button
+                      id="pos-manual-drawer-pop-btn"
+                      onClick={() => handleManualDrawerPop('Manual open by cashier')}
+                      style={{
+                        flex: 1,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                        height: '34px',
+                        background: '#F0FDF4', border: '1.5px solid #86EFAC',
+                        borderRadius: '8px', color: '#15803D',
+                        cursor: 'pointer',
+                        transition: 'background 0.1s, transform 0.08s',
+                        fontWeight: 800, fontSize: '11px', letterSpacing: '0.3px',
+                      }}
+                      onMouseDown={e => { (e.currentTarget as HTMLElement).style.transform = 'scale(0.97)'; }}
+                      onMouseUp={e => { (e.currentTarget as HTMLElement).style.transform = 'scale(1)'; }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = 'scale(1)'; }}
+                    >
+                      <span style={{ fontSize: '14px', lineHeight: 1 }}>🗃️</span>
+                      <span>{lang === 'ku' ? 'کرانەوەی سندوقی نەختی' : 'Open Cash Drawer'}</span>
+                    </button>
+                  </div>
+                )}
 
               </div>
             </div>
 
             {/* ── Inline Cash Panel ── */}
             {checkoutView === 'cash' && (
-              <div style={{animation:'slideUp 0.3s cubic-bezier(0.34,1.56,0.64,1)'}}>
+              <div style={{ animation: 'slideUp 0.3s cubic-bezier(0.34,1.56,0.64,1)' }}>
                 <InlineCashPanel
                   saleTotal={total}
                   lang={lang}
@@ -1747,7 +1779,7 @@ export function POSPage() {
 
             {/* ── Inline Card Panel ── */}
             {checkoutView === 'card' && (
-              <div style={{animation:'slideUp 0.3s cubic-bezier(0.34,1.56,0.64,1)'}}>
+              <div style={{ animation: 'slideUp 0.3s cubic-bezier(0.34,1.56,0.64,1)' }}>
                 <InlineCardPanel
                   saleTotal={total}
                   lang={lang}
@@ -1759,7 +1791,7 @@ export function POSPage() {
 
             {/* ── Inline Split Panel ── */}
             {checkoutView === 'split' && (
-              <div style={{animation:'slideUp 0.3s cubic-bezier(0.34,1.56,0.64,1)'}}>
+              <div style={{ animation: 'slideUp 0.3s cubic-bezier(0.34,1.56,0.64,1)' }}>
                 <InlineSplitPanel
                   saleTotal={total}
                   lang={lang}
@@ -1771,395 +1803,176 @@ export function POSPage() {
 
             {/* Sale success banner */}
             {sale && checkoutView === 'menu' && (
-              <div style={{
-                margin:'0 8px 6px',
-                borderRadius:'5px',
-                border:'1px solid rgba(52,211,153,0.2)',
-                background:'rgba(6,78,59,0.15)',
-                padding:'6px 8px',
-              }}>
-                <p style={{fontSize:'9px',color:'#6ee7b7',fontWeight:800}}>✓ {t.transactionComplete}: R-{sale.receiptNumber}</p>
-                <div style={{display:'flex',gap:'10px',marginTop:'3px'}}>
-                  <a
-                    style={{fontSize:'9px',color:'#fbbf24',fontWeight:700,textDecoration:'underline'}}
-                    href={apiUrl(`/sales/${sale.id}/receipt.pdf`)}
-                    target="_blank"
-                    rel="noreferrer"
-                  >📄 {t.downloadReceipt}</a>
-                  <button
-                    style={{fontSize:'9px',color:'#fbbf24',fontWeight:700,textDecoration:'underline',background:'none',border:'none',cursor:'pointer',padding:0}}
-                    onClick={() => printReceipt(sale, lang, testMode, showNotification)}
-                  >🖨️ {t.reprintReceipt}</button>
+              <div style={{ margin: '0 12px 10px', borderRadius: '8px', border: '1px solid #BBF7D0', background: '#ECFDF5', padding: '8px 12px' }}>
+                <p style={{ fontSize: '11px', color: '#16A34A', fontWeight: 800, margin: 0 }}>✓ {t.transactionComplete}: R-{sale.receiptNumber}</p>
+                <div style={{ display: 'flex', gap: 14, marginTop: 4 }}>
+                  <a style={{ fontSize: '11px', color: '#2563EB', fontWeight: 700, textDecoration: 'underline' }} href={apiUrl(`/sales/${sale.id}/receipt.pdf`)} target="_blank" rel="noreferrer">📄 {t.downloadReceipt}</a>
+                  <button style={{ fontSize: '11px', color: '#2563EB', fontWeight: 700, textDecoration: 'underline', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }} onClick={() => { if (sale) { const html = buildReceiptHtml(sale, lang, translations[lang]); printSaleReceipt(html); showNotification(`🖨️ ${t.reprintingCopy}`, 'info'); } }}>🖨️ {t.reprintReceipt}</button>
                 </div>
               </div>
             )}
+
           </div>
         </div>
-        {/* ── END LEFT CART PANEL ── */}
+        {/* ─── END CHECKOUT PANEL ─── */}
 
-        {/* ── CENTER: COMPACT PRODUCT GRID ── */}
-        <div
-          className="flex flex-1 flex-col border-l border-r border-white/5 bg-slate-950"
-          style={{alignSelf:'flex-start', overflow:'visible'}}
-        >
+        {/* ─────────── PRODUCT + CATEGORY PANEL (~38%) ─────────── */}
+        <div style={{ flex: '38 0 0', minWidth: 0, display: 'flex', flexDirection: 'column', border: '1px solid #E5E7EB', borderRadius: '12px', overflow: 'hidden', background: '#FFFFFF', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
 
-          {/* Barcode / Search bar */}
-          <form onSubmit={handleBarcodeSubmit} className="flex-shrink-0 flex items-center gap-0 border-b border-white/8 bg-[#0d0d12]" style={{height:'34px'}}>
-            <span className="text-emerald-400 text-[10px] font-mono tracking-widest px-2 flex-shrink-0 select-none">[F1]</span>
-            <div className="relative flex-1">
-              <input
-                ref={searchInputRef}
-                autoFocus
-                type="text"
-                className="w-full h-full bg-transparent py-1.5 pl-1 pr-8 text-[11px] font-mono text-white placeholder-slate-600 focus:outline-none"
-                placeholder={isRtl ? 'گەڕان / بارکۆد...' : 'Scan barcode or search...'}
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                dir={isRtl ? 'rtl' : 'ltr'}
-              />
-              <span className="absolute right-2 top-1/2 -translate-y-1/2 flex h-1.5 w-1.5">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
-              </span>
-            </div>
+          {/* Search / Barcode bar */}
+          <form onSubmit={handleBarcodeSubmit} style={{ flexShrink: 0, display: 'flex', alignItems: 'center', borderBottom: '1px solid #E5E7EB', background: '#F8FAFC', height: 42 }}>
+            <span style={{ fontSize: '10px', fontFamily: 'monospace', color: '#16A34A', padding: '0 10px', flexShrink: 0, letterSpacing: '1px', fontWeight: 700 }}>[F1]</span>
+            <input
+              ref={searchInputRef}
+              autoFocus
+              type="text"
+              style={{ flex: 1, height: '100%', background: 'transparent', border: 'none', outline: 'none', color: '#111827', fontSize: '12px', fontFamily: 'monospace', padding: '0 8px', letterSpacing: '0.3px' }}
+              placeholder={isRtl ? 'گەڕان / بارکۆد...' : 'Scan barcode or search...'}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              dir={isRtl ? 'rtl' : 'ltr'}
+            />
+            <span className="flex h-2 w-2 mr-3 relative">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ background: '#16A34A' }}></span>
+              <span className="relative inline-flex rounded-full h-2 w-2" style={{ background: '#16A34A' }}></span>
+            </span>
           </form>
 
-          {/* Compact product grid — exactly 3 visible rows, then scroll */}
-          <div
-            style={{
-              height: '275px',
-              overflowY: 'auto',
-              overflowX: 'hidden',
-              flexShrink: 0,
-              scrollbarWidth: 'thin',
-              scrollbarColor: '#1e293b transparent',
-            }}
-          >
-            {filteredProducts.length === 0 ? (
-              <div className="flex h-full flex-col items-center justify-center text-slate-600">
-                <span className="text-xl mb-1">🔍</span>
-                <p className="text-[9px] font-semibold uppercase tracking-wider">
-                  {isRtl ? 'هیچ بەرهەمێک نەدۆزرایەوە' : 'No products found'}
-                </p>
-              </div>
-            ) : (
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))',
-                gap: '2px',
-                padding: '2px',
-                alignContent: 'start',
-              }}>
-                {filteredProducts.map((p) => {
-                  const isLowStock = p.stockQuantity <= p.lowStockThreshold;
-                  const unitLabel = p.unit === 'KG' ? 'kg' : p.unit === 'LITER' ? 'L' : 'pc';
-                  const style = categoryStyles[p.category.slug] || defaultCategoryStyle;
-                  const hasPromo = activePromos.some((promo) => promo.affectedItems.includes(p.id));
-                  const localizedName = productTranslations[p.sku]?.[lang] || p.name;
-                  const cartItem = cart.find((item) => item.product.id === p.id);
-                  const qtyInCart = cartItem ? cartItem.quantity : 0;
-                  const outOfStock = p.stockQuantity <= 0;
+          {/* Product Grid + Category Sidebar */}
+          <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
 
-                  return (
-                    <button
-                      key={p.id}
-                      onClick={() => addProduct(p)}
-                      disabled={outOfStock}
-                      title={`${localizedName} — ${formatCurrency(Number(p.price))}/${unitLabel}`}
-                      style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        overflow: 'hidden',
-                        border: qtyInCart > 0
-                          ? '2px solid #22c55e'
-                          : outOfStock
-                          ? '1px solid rgba(239,68,68,0.18)'
-                          : '1px solid rgba(255,255,255,0.07)',
-                        borderRadius: '2px',
-                        background: qtyInCart > 0 ? 'rgba(21,128,61,0.15)' : '#0f1117',
-                        cursor: outOfStock ? 'not-allowed' : 'pointer',
-                        opacity: outOfStock ? 0.38 : 1,
-                        transition: 'border-color 0.08s',
-                        boxShadow: qtyInCart > 0 ? '0 0 5px rgba(34,197,94,0.3)' : 'none',
-                        minWidth: 0,
-                        position: 'relative',
-                      }}
-                    >
-                      {/* RED PRICE BAR — TOP */}
-                      <div style={{
-                        background: hasPromo
-                          ? 'linear-gradient(90deg,#6d28d9,#7c3aed)'
-                          : 'linear-gradient(90deg,#b91c1c,#dc2626)',
-                        padding: '1px 2px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        flexShrink: 0,
-                        lineHeight: 1,
-                        height: '13px',
-                      }}>
-                        <span style={{
-                          color: '#fff',
-                          fontSize: '8px',
-                          fontWeight: 900,
-                          fontFamily: 'monospace',
-                          letterSpacing: '-0.4px',
-                          whiteSpace: 'nowrap',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                        }}>
-                          {formatCurrency(Number(p.price))}
-                        </span>
-                        <span style={{
-                          color: 'rgba(255,255,255,0.55)',
-                          fontSize: '6px',
-                          fontWeight: 700,
-                          flexShrink: 0,
-                          marginLeft: '1px',
-                        }}>/{unitLabel}</span>
-                      </div>
+            {/* Product Grid */}
+            <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'thin', scrollbarColor: '#E5E7EB transparent', background: '#F8FAFC' }}>
+              {filteredProducts.length === 0 ? (
+                <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                  <span style={{ fontSize: '24px', opacity: 0.3 }}>🔍</span>
+                  <p style={{ fontSize: '10px', fontWeight: 600, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '1px', margin: 0 }}>
+                    {isRtl ? 'هیچ بەرهەمێک نەدۆزرایەوە' : 'No products found'}
+                  </p>
+                </div>
+              ) : (
+                <div className="pos-product-grid">
+                  {filteredProducts.map((p) => {
+                    const style = categoryStyles[p.category.slug] || defaultCategoryStyle;
+                    const localizedName = productTranslations[p.sku]?.[lang] || p.name;
+                    const cartItem = cart.find((item) => item.product.id === p.id);
+                    const qtyInCart = cartItem ? cartItem.quantity : 0;
+                    const outOfStock = p.stockQuantity <= 0;
+                    const unitLabel = p.unit === 'KG' ? 'kg' : p.unit === 'LITER' ? 'L' : '';
 
-                      {/* PRODUCT IMAGE — fixed 62px tall, ~70% of card */}
-                      <div style={{
-                        position: 'relative',
-                        width: '100%',
-                        height: '62px',
-                        flexShrink: 0,
-                        overflow: 'hidden',
-                      }}>
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => addProduct(p)}
+                        disabled={outOfStock}
+                        title={`${localizedName} — ${formatCurrency(Number(p.price))}${unitLabel ? `/${unitLabel}` : ''}`}
+                        className={`pos-product-tile ${qtyInCart > 0 ? 'pos-product-tile--selected' : ''} ${outOfStock ? 'pos-product-tile--out' : ''}`}
+                      >
                         {p.imageUrl ? (
-                          <img
-                            src={apiUrl(p.imageUrl)}
-                            alt={localizedName}
-                            style={{width:'100%',height:'100%',objectFit:'cover',display:'block'}}
-                          />
+                          <img src={apiUrl(p.imageUrl)} alt={localizedName} className="pos-product-tile__img" />
                         ) : (
-                          <div style={{
-                            width:'100%',height:'100%',
-                            display:'flex',alignItems:'center',justifyContent:'center',
-                            background: `linear-gradient(135deg,#0c0f1a,#111827)`,
-                          }}>
-                            <span style={{fontSize:'22px',lineHeight:1,userSelect:'none'}}>{style.emoji}</span>
+                          <div className="pos-product-tile__fallback" aria-hidden="true">
+                            {style.emoji}
                           </div>
                         )}
 
-                        {/* PROMO micro-badge */}
-                        {hasPromo && (
-                          <span style={{
-                            position:'absolute',top:1,left:1,
-                            background:'#7c3aed',color:'#fff',
-                            fontSize:'6px',fontWeight:900,padding:'1px 2px',
-                            borderRadius:'1px',textTransform:'uppercase',
-                          }}>%</span>
-                        )}
+                        <div className="pos-product-tile__info">
+                          <span className="pos-product-tile__name">{localizedName}</span>
+                          <div className="pos-product-tile__price-row">
+                            <span className="pos-product-tile__price">{formatCurrency(Number(p.price))}</span>
+                            {unitLabel && <span className="pos-product-tile__unit">/{unitLabel}</span>}
+                          </div>
+                        </div>
 
-                        {/* CART QTY badge */}
-                        {qtyInCart > 0 && (
-                          <span style={{
-                            position:'absolute',top:1,right:1,
-                            background:'#22c55e',color:'#000',
-                            minWidth:13,height:13,
-                            borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',
-                            fontSize:'7px',fontWeight:900,padding:'0 1px',
-                            boxShadow:'0 0 4px rgba(34,197,94,0.9)',
-                          }}>
-                            {p.unit === 'KG' || p.unit === 'LITER' ? `${qtyInCart.toFixed(1)}` : `${qtyInCart}×`}
+                        {qtyInCart > 0 ? (
+                          <span className="pos-product-tile__qty">
+                            {p.unit === 'KG' || p.unit === 'LITER' ? qtyInCart.toFixed(1) : `${qtyInCart}×`}
                           </span>
-                        )}
+                        ) : null}
 
-                        {/* STOCK badge */}
-                        <span style={{
-                          position:'absolute',bottom:0,right:0,
-                          background: p.stockQuantity <= 0
-                            ? 'rgba(127,29,29,0.95)'
-                            : isLowStock
-                            ? 'rgba(120,53,15,0.9)'
-                            : 'rgba(0,0,0,0.45)',
-                          color: p.stockQuantity <= 0 ? '#fca5a5' : isLowStock ? '#fde68a' : '#6b7280',
-                          fontSize:'6px',fontWeight:700,fontFamily:'monospace',
-                          padding:'0 2px',lineHeight:'10px',
-                        }}>
-                          {p.stockQuantity <= 0 ? '✕' : p.stockQuantity}
-                        </span>
-                      </div>
+                        {outOfStock ? <div className="pos-product-tile__out" aria-hidden="true" /> : null}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
 
-                      {/* RED NAME BAR — BOTTOM */}
-                      <div style={{
-                        background: 'linear-gradient(90deg,#991b1b,#7f1d1d)',
-                        padding: '1px 2px',
-                        flexShrink: 0,
-                        height: '12px',
-                        overflow: 'hidden',
-                        display: 'flex',
-                        alignItems: 'center',
-                      }}>
-                        <span style={{
-                          color: '#fecaca',
-                          fontSize: '7px',
-                          fontWeight: 700,
-                          display: 'block',
-                          whiteSpace: 'nowrap',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          width: '100%',
-                          textAlign: isRtl ? 'right' : 'left',
-                          lineHeight: 1,
-                        }}>
-                          {localizedName}
-                        </span>
-                      </div>
+            {/* ── Category Sidebar (far right, text-only) ── */}
+            <div style={{ width: '92px', flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#FFFFFF', borderLeft: '1px solid #E5E7EB' }}>
+              <div style={{ padding: '5px 4px', textAlign: 'center', background: '#F8FAFC', borderBottom: '1px solid #E5E7EB', flexShrink: 0 }}>
+                <span style={{ fontSize: '8px', fontWeight: 900, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '1px' }}>FILTER</span>
+              </div>
+
+              <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 3, padding: '4px', scrollbarWidth: 'thin', scrollbarColor: '#D1D5DB #F3F4F6' }}>
+                {/* ALL button */}
+                <button
+                  onClick={() => setSelectedCategory('all')}
+                  className={`pos-cat-btn${selectedCategory === 'all' ? ' pos-cat-btn--active' : ''}`}
+                >
+                  {lang === 'ku' ? 'هەموو' : 'All Items'}
+                </button>
+
+                {categories.map((cat) => {
+                  const isSelected = selectedCategory === cat.id;
+                  const localizedCatName = categoryTranslations[cat.slug]?.[lang] || cat.name;
+
+                  return (
+                    <button
+                      key={cat.id}
+                      onClick={() => setSelectedCategory(cat.id)}
+                      title={localizedCatName}
+                      className={`pos-cat-btn${isSelected ? ' pos-cat-btn--active' : ''}`}
+                    >
+                      {localizedCatName}
                     </button>
                   );
                 })}
               </div>
-            )}
+            </div>
+
           </div>
         </div>
-        {/* ── END CENTER PRODUCT GRID ── */}
-
-        {/* ── RIGHT: VERTICAL CATEGORY SIDEBAR ── */}
-        <div style={{
-          width: '52px',
-          flexShrink: 0,
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
-          background: '#08090f',
-          borderLeft: '1px solid rgba(255,255,255,0.06)',
-        }}>
-          {/* Sidebar label */}
-          <div style={{
-            padding: '3px 2px',
-            textAlign: 'center',
-            background: '#0a0c15',
-            borderBottom: '1px solid rgba(255,255,255,0.06)',
-            flexShrink: 0,
-          }}>
-            <span style={{fontSize:'6px', fontWeight:900, color:'#334155', textTransform:'uppercase', letterSpacing:'0.8px'}}>CAT</span>
-          </div>
-
-          {/* Scrollable category buttons */}
-          <div style={{
-            flex:1, overflowY:'auto', display:'flex', flexDirection:'column', gap:'1px', padding:'1px',
-            scrollbarWidth:'none',
-          }}>
-            {/* ALL button */}
-            <button
-              onClick={() => setSelectedCategory('all')}
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: '3px 1px',
-                borderRadius: '2px',
-                border: selectedCategory === 'all' ? '1px solid rgba(59,130,246,0.7)' : '1px solid rgba(255,255,255,0.04)',
-                background: selectedCategory === 'all'
-                  ? 'linear-gradient(160deg,#1d4ed8,#1e40af)'
-                  : 'rgba(255,255,255,0.02)',
-                cursor: 'pointer',
-                gap: '1px',
-                flexShrink: 0,
-                transition: 'all 0.08s',
-                boxShadow: selectedCategory === 'all' ? '0 0 6px rgba(59,130,246,0.35)' : 'none',
-              }}
-            >
-              <span style={{fontSize:'12px', lineHeight:1}}>⭐</span>
-              <span style={{
-                fontSize: '6px',
-                fontWeight: 900,
-                color: selectedCategory === 'all' ? '#bfdbfe' : '#475569',
-                textTransform: 'uppercase',
-                letterSpacing: '0.2px',
-                textAlign: 'center',
-                lineHeight: 1,
-              }}>ALL</span>
-            </button>
-
-            {categories.map((cat) => {
-              const style = categoryStyles[cat.slug] || defaultCategoryStyle;
-              const isSelected = selectedCategory === cat.id;
-              const localizedCatName = categoryTranslations[cat.slug]?.[lang] || cat.name;
-              const shortName = localizedCatName.length > 6 ? localizedCatName.slice(0, 5) + '.' : localizedCatName;
-
-              return (
-                <button
-                  key={cat.id}
-                  onClick={() => setSelectedCategory(cat.id)}
-                  title={localizedCatName}
-                  style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    padding: '3px 1px',
-                    borderRadius: '2px',
-                    border: isSelected ? '1px solid rgba(59,130,246,0.7)' : '1px solid rgba(255,255,255,0.04)',
-                    background: isSelected
-                      ? 'linear-gradient(160deg,#1d4ed8,#1e40af)'
-                      : 'rgba(255,255,255,0.02)',
-                    cursor: 'pointer',
-                    gap: '1px',
-                    flexShrink: 0,
-                    transition: 'all 0.08s',
-                    boxShadow: isSelected ? '0 0 6px rgba(59,130,246,0.35)' : 'none',
-                  }}
-                >
-                  <span style={{fontSize:'12px', lineHeight:1}}>{style.emoji}</span>
-                  <span style={{
-                    fontSize: '6px',
-                    fontWeight: 900,
-                    color: isSelected ? '#bfdbfe' : '#374151',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.1px',
-                    textAlign: 'center',
-                    lineHeight: 1,
-                    wordBreak: 'break-all',
-                    maxWidth: '46px',
-                  }}>{shortName}</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-        {/* ── END RIGHT CATEGORY SIDEBAR ── */}
+        {/* ─── END PRODUCT + CATEGORY PANEL ─── */}
 
       </section>
 
-      {/* 3. TERMINAL ACTION FOOTER BAR */}
-      <footer className="flex h-16 items-center justify-between rounded-xl bg-slate-900 border border-white/10 px-4 shadow-[0_-4px_15px_rgba(0,0,0,0.3)] flex-shrink-0">
+      {/* ── FOOTER BAR ── */}
+      <footer className="flex h-12 items-center justify-between rounded-xl px-4 flex-shrink-0" style={{ background: '#FFFFFF', border: '1px solid #E5E7EB', boxShadow: '0 -1px 4px rgba(0,0,0,0.05)' }}>
         <div className="flex gap-2">
+          {/* Apply Coupon */}
           <button
-            onClick={() => {
-              setAppliedCoupon(null);
-              setCouponCode('');
-              setActiveModal('coupon');
-            }}
-            className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-slate-950/40 px-4 py-2.5 text-xs font-semibold text-slate-300 hover:bg-slate-950 hover:text-white transition-colors"
+            onClick={() => { setAppliedCoupon(null); setCouponCode(''); setActiveModal('coupon'); }}
+            className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors hover:opacity-80"
+            style={{ background: '#F3F4F6', border: '1px solid #E5E7EB', color: '#374151' }}
           >
             🎟️ {t.applyCoupon}
           </button>
 
+          {/* Refund Lookup */}
           <button
             onClick={() => setActiveModal('refund')}
-            className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-slate-950/40 px-4 py-2.5 text-xs font-semibold text-slate-300 hover:bg-slate-950 hover:text-white transition-colors"
+            className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors hover:opacity-80"
+            style={{ background: '#F3F4F6', border: '1px solid #E5E7EB', color: '#374151' }}
           >
             🔄 {t.refundLookup}
           </button>
 
+          {/* Cash Till Session */}
           <button
-            onClick={() => {
-              setDrawerFloatInput('100000');
-              setActiveModal('drawer');
-            }}
-            className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-slate-950/40 px-4 py-2.5 text-xs font-semibold text-slate-300 hover:bg-slate-950 hover:text-white transition-colors"
+            onClick={() => { setDrawerFloatInput('100000'); setActiveModal('drawer'); }}
+            className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors hover:opacity-80"
+            style={{ background: '#F3F4F6', border: '1px solid #E5E7EB', color: '#374151' }}
           >
             🪙 {t.cashTillSession}
           </button>
 
+          {/* Z-Report */}
           <button
             onClick={handleShowZReport}
-            className="flex items-center gap-1.5 rounded-lg border border-gold-500/20 bg-gold-500/5 px-4 py-2.5 text-xs font-bold text-gold-400 hover:bg-gold-500 hover:text-slate-950 transition-colors"
+            className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-colors hover:opacity-80"
+            style={{ background: '#EFF6FF', border: '1px solid #BFDBFE', color: '#2563EB' }}
           >
             📊 {t.shiftZReport}
           </button>
@@ -2167,44 +1980,42 @@ export function POSPage() {
 
         <div>
           <button
-            onClick={() => {
-              void loadHoldsCount();
-              setActiveModal('holds');
-            }}
-            className={`rounded-lg px-4 py-2.5 text-xs font-bold border transition-all ${
-              holdsCount > 0
-                ? 'bg-amber-500/20 border-amber-500/30 text-amber-400 animate-pulse'
-                : 'bg-slate-950 border-white/10 text-slate-400 hover:bg-slate-900 hover:text-white'
-            }`}
+            onClick={() => { void loadHoldsCount(); setActiveModal('holds'); }}
+            className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-all ${holdsCount > 0 ? 'animate-pulse' : ''}`}
+            style={holdsCount > 0
+              ? { background: '#FFFBEB', border: '1px solid #FDE68A', color: '#D97706' }
+              : { background: '#F3F4F6', border: '1px solid #E5E7EB', color: '#6B7280' }}
           >
             📥 {t.recallHolds} ({holdsCount})
           </button>
         </div>
       </footer>
 
+
+
       {/* Dynamic premium toast overlay */}
       {toast && (
-        <div className="fixed bottom-20 left-1/2 z-[100] -translate-x-1/2 transform rounded-xl border border-gold-500/20 bg-slate-900 px-6 py-3 shadow-[0_0_24px_rgba(232,184,79,0.15)] backdrop-blur-md transition-all">
+        <div className="fixed bottom-20 left-1/2 z-[100] -translate-x-1/2 transform rounded-xl px-6 py-3 transition-all" style={{ background: '#FFFFFF', border: '1px solid #E5E7EB', boxShadow: '0 8px 24px rgba(0,0,0,0.12)', backdropFilter: 'blur(8px)' }}>
           <div className="flex items-center gap-3">
             <span className="text-sm">
               {toast.type === 'success' ? '🟢' : toast.type === 'error' ? '🔴' : '💡'}
             </span>
-            <p className="text-xs font-extrabold tracking-tight text-white">{toast.message}</p>
+            <p className="text-xs font-extrabold tracking-tight" style={{ color: '#111827' }}>{toast.message}</p>
           </div>
         </div>
       )}
 
       {/* MODAL: PIN VERIFICATION CODE */}
       {activeModal === 'pin' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm">
-          <div className="w-[360px] rounded-2xl border border-white/10 bg-slate-900 p-6 shadow-2xl">
-            <h3 className="text-sm font-bold uppercase tracking-wider text-red-400 mb-2">
+        <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm" style={{ background: 'rgba(0,0,0,0.4)' }}>
+          <div className="w-[360px] rounded-2xl p-6 shadow-2xl" style={{ background: '#FFFFFF', border: '1px solid #E5E7EB' }}>
+            <h3 className="text-sm font-bold uppercase tracking-wider mb-2" style={{ color: '#DC2626' }}>
               🚨 {t.pinRequired}
             </h3>
-            <p className="text-[10px] text-slate-400 mb-4">{pinCallback?.label}</p>
+            <p className="text-[10px] mb-4" style={{ color: '#6B7280' }}>{pinCallback?.label}</p>
 
             {pinError && (
-              <div className="mb-4 rounded-lg bg-red-500/10 border border-red-500/20 p-2.5 text-xs text-red-400 font-bold">
+              <div className="mb-4 rounded-lg p-2.5 text-xs font-bold" style={{ background: '#FEF2F2', border: '1px solid #FECACA', color: '#DC2626' }}>
                 {pinError}
               </div>
             )}
@@ -2213,7 +2024,8 @@ export function POSPage() {
               type="password"
               placeholder="••••"
               maxLength={6}
-              className="w-full text-center rounded-xl border border-white/10 bg-slate-950 px-4 py-3 text-xl font-mono text-white focus:outline-none focus:border-red-400"
+              className="w-full text-center rounded-xl px-4 py-3 text-xl font-mono focus:outline-none"
+              style={{ border: '1.5px solid #E5E7EB', background: '#F8FAFC', color: '#111827' }}
               value={pinValue}
               onChange={(e) => setPinValue(e.target.value)}
               onKeyDown={(e) => {
@@ -2224,13 +2036,15 @@ export function POSPage() {
             <div className="mt-4 flex gap-2">
               <button
                 onClick={closeModals}
-                className="flex-1 rounded-xl border border-white/15 bg-transparent py-2.5 text-xs font-semibold hover:bg-white/5"
+                className="flex-1 rounded-xl py-2.5 text-xs font-semibold"
+                style={{ border: '1px solid #E5E7EB', background: '#F3F4F6', color: '#374151' }}
               >
                 {t.cancel}
               </button>
               <button
                 onClick={handleVerifyPIN}
-                className="flex-1 rounded-xl bg-red-600 py-2.5 text-xs font-bold text-white hover:bg-red-500"
+                className="flex-1 rounded-xl py-2.5 text-xs font-bold text-white"
+                style={{ background: '#DC2626' }}
               >
                 {t.verify}
               </button>
@@ -2241,27 +2055,29 @@ export function POSPage() {
 
       {/* MODAL: AGE CONFIRMATION VERIFY */}
       {activeModal === 'age' && ageProduct && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm">
-          <div className="w-[380px] rounded-2xl border border-white/10 bg-slate-900 p-6 shadow-2xl text-center">
+        <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm" style={{ background: 'rgba(0,0,0,0.4)' }}>
+          <div className="w-[380px] rounded-2xl p-6 shadow-2xl text-center" style={{ background: '#FFFFFF', border: '1px solid #E5E7EB' }}>
             <span className="text-4xl">🔞</span>
-            <h3 className="text-base font-bold uppercase tracking-wider text-red-400 mt-2 mb-2">
+            <h3 className="text-base font-bold uppercase tracking-wider mt-2 mb-2" style={{ color: '#DC2626' }}>
               {t.ageVerification}
             </h3>
-            <p className="text-xs text-slate-300 px-2 leading-relaxed">
-              {t.ageRestrictionText} <strong className="text-white text-sm font-black">{ageProduct.minAge}</strong>.
+            <p className="text-xs px-2 leading-relaxed" style={{ color: '#374151' }}>
+              {t.ageRestrictionText} <strong className="text-sm font-black" style={{ color: '#111827' }}>{ageProduct.minAge}</strong>.
             </p>
-            <p className="text-[10px] text-slate-400 mt-2 font-mono">{ageProduct.name}</p>
+            <p className="text-[10px] mt-2 font-mono" style={{ color: '#6B7280' }}>{ageProduct.name}</p>
 
             <div className="mt-6 flex gap-2">
               <button
                 onClick={closeModals}
-                className="flex-1 rounded-xl border border-white/15 bg-transparent py-2.5 text-xs font-semibold hover:bg-white/5"
+                className="flex-1 rounded-xl py-2.5 text-xs font-semibold"
+                style={{ border: '1px solid #E5E7EB', background: '#F3F4F6', color: '#374151' }}
               >
                 {t.cancel}
               </button>
               <button
                 onClick={confirmAgeVerification}
-                className="flex-1 rounded-xl bg-gold-500 py-2.5 text-xs font-bold text-slate-950 hover:bg-gold-400"
+                className="flex-1 rounded-xl py-2.5 text-xs font-bold text-white"
+                style={{ background: '#2563EB' }}
               >
                 {t.confirm}
               </button>
@@ -2272,27 +2088,29 @@ export function POSPage() {
 
       {/* MODAL: WEIGHT TILL SCALE CALIBRATION */}
       {activeModal === 'weight' && scaleProduct && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm">
-          <div className="w-[380px] rounded-2xl border border-white/10 bg-slate-900 p-6 shadow-2xl">
-            <h3 className="text-base font-bold uppercase tracking-wider text-gold-400 mb-1">
+        <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm" style={{ background: 'rgba(0,0,0,0.4)' }}>
+          <div className="w-[380px] rounded-2xl p-6 shadow-2xl" style={{ background: '#FFFFFF', border: '1px solid #E5E7EB' }}>
+            <h3 className="text-base font-bold uppercase tracking-wider mb-1" style={{ color: '#D97706' }}>
               ⚖️ {t.weightVerification}
             </h3>
-            <p className="text-[10px] text-slate-400 mb-4">{scaleProduct.name}</p>
+            <p className="text-[10px] mb-4" style={{ color: '#6B7280' }}>{scaleProduct.name}</p>
 
             <div className="space-y-4">
               <div>
-                <label className="block text-[10px] text-slate-400 mb-1">{t.scaleWeight}</label>
+                <label className="block text-[10px] mb-1" style={{ color: '#6B7280' }}>{t.scaleWeight}</label>
                 <div className="flex gap-2">
                   <input
                     type="number"
                     step="0.01"
-                    className="flex-1 rounded-xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm font-mono text-white focus:outline-none"
+                    className="flex-1 rounded-xl px-4 py-2.5 text-sm font-mono focus:outline-none"
+                    style={{ border: '1.5px solid #E5E7EB', background: '#F8FAFC', color: '#111827' }}
                     value={scaleWeight}
                     onChange={(e) => setScaleWeight(e.target.value)}
                   />
                   <button
                     onClick={handleSimulateScale}
-                    className="rounded-xl border border-white/15 bg-white/5 px-3 text-xs font-bold hover:bg-white/10"
+                    className="rounded-xl px-3 text-xs font-bold hover:opacity-80"
+                    style={{ border: '1px solid #E5E7EB', background: '#F3F4F6', color: '#374151' }}
                   >
                     🔄 {t.simulateScale}
                   </button>
@@ -2303,13 +2121,15 @@ export function POSPage() {
             <div className="mt-6 flex gap-2">
               <button
                 onClick={closeModals}
-                className="flex-1 rounded-xl border border-white/15 bg-transparent py-2.5 text-xs font-semibold hover:bg-white/5"
+                className="flex-1 rounded-xl py-2.5 text-xs font-semibold"
+                style={{ border: '1px solid #E5E7EB', background: '#F3F4F6', color: '#374151' }}
               >
                 {t.cancel}
               </button>
               <button
                 onClick={handleWeightConfirm}
-                className="flex-1 rounded-xl bg-gold-500 py-2.5 text-xs font-bold text-slate-950 hover:bg-gold-400"
+                className="flex-1 rounded-xl py-2.5 text-xs font-bold text-white"
+                style={{ background: '#16A34A' }}
               >
                 {t.confirm}
               </button>
@@ -2320,9 +2140,9 @@ export function POSPage() {
 
       {/* MODAL: DISCOUNT COUPONS */}
       {activeModal === 'coupon' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm">
-          <div className="w-[380px] rounded-2xl border border-white/10 bg-slate-900 p-6 shadow-2xl">
-            <h3 className="text-base font-bold uppercase tracking-wider text-gold-400 mb-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm" style={{ background: 'rgba(0,0,0,0.4)' }}>
+          <div className="w-[380px] rounded-2xl p-6 shadow-2xl" style={{ background: '#FFFFFF', border: '1px solid #E5E7EB' }}>
+            <h3 className="text-base font-bold uppercase tracking-wider mb-4" style={{ color: '#D97706' }}>
               🎟️ {t.applyCoupon}
             </h3>
 
@@ -2330,7 +2150,8 @@ export function POSPage() {
               <input
                 type="text"
                 placeholder={t.couponPlaceholder}
-                className="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm uppercase text-white focus:outline-none focus:border-gold-400"
+                className="w-full rounded-xl px-4 py-2.5 text-sm uppercase focus:outline-none"
+                style={{ border: '1.5px solid #E5E7EB', background: '#F8FAFC', color: '#111827' }}
                 value={couponCode}
                 onChange={(e) => setCouponCode(e.target.value)}
               />
@@ -2338,13 +2159,15 @@ export function POSPage() {
               <div className="flex gap-2">
                 <button
                   onClick={closeModals}
-                  className="flex-1 rounded-xl border border-white/15 bg-transparent py-2.5 text-xs font-semibold hover:bg-white/5"
+                  className="flex-1 rounded-xl py-2.5 text-xs font-semibold"
+                  style={{ border: '1px solid #E5E7EB', background: '#F3F4F6', color: '#374151' }}
                 >
                   {t.cancel}
                 </button>
                 <button
                   onClick={handleApplyCoupon}
-                  className="flex-1 rounded-xl bg-gold-500 py-2.5 text-xs font-bold text-slate-950 hover:bg-gold-400"
+                  className="flex-1 rounded-xl py-2.5 text-xs font-bold text-white"
+                  style={{ background: '#F59E0B' }}
                 >
                   {t.apply}
                 </button>
@@ -2356,26 +2179,28 @@ export function POSPage() {
 
       {/* MODAL: REFUND WIDGET */}
       {activeModal === 'refund' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm">
-          <div className="w-[500px] max-h-[85vh] overflow-y-auto rounded-2xl border border-white/10 bg-slate-900 p-6 shadow-2xl scrollbar-thin">
-            <h3 className="text-base font-bold uppercase tracking-wider text-gold-400 mb-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm" style={{ background: 'rgba(0,0,0,0.4)' }}>
+          <div className="w-[500px] max-h-[85vh] overflow-y-auto rounded-2xl p-6 shadow-2xl" style={{ background: '#FFFFFF', border: '1px solid #E5E7EB' }}>
+            <h3 className="text-base font-bold uppercase tracking-wider mb-4" style={{ color: '#D97706' }}>
               🔄 {t.refundReceipt}
             </h3>
 
             {refundSuccessPdf ? (
-              <div className="rounded-xl border border-mint-500/20 bg-mint-500/10 p-4 text-center">
-                <p className="text-sm text-mint-300 font-bold mb-2">{t.refundApproved}</p>
+              <div className="rounded-xl p-4 text-center" style={{ background: '#ECFDF5', border: '1px solid #BBF7D0' }}>
+                <p className="text-sm font-bold mb-2" style={{ color: '#16A34A' }}>{t.refundApproved}</p>
                 <a
                   href={refundSuccessPdf}
                   target="_blank"
                   rel="noreferrer"
-                  className="rounded-lg bg-gold-500 px-4 py-2 text-xs font-bold text-slate-950 hover:bg-gold-400 inline-block"
+                  className="rounded-lg px-4 py-2 text-xs font-bold inline-block text-white"
+                  style={{ background: '#2563EB' }}
                 >
                   🖨️ {t.reprintReceipt}
                 </a>
                 <button
                   onClick={closeModals}
-                  className="block mt-4 text-xs font-semibold text-slate-400 hover:underline mx-auto"
+                  className="block mt-4 text-xs font-semibold hover:underline mx-auto"
+                  style={{ color: '#6B7280', background: 'none', border: 'none', cursor: 'pointer' }}
                 >
                   {t.close}
                 </button>
@@ -2385,14 +2210,16 @@ export function POSPage() {
                 <div className="flex gap-2 mb-4">
                   <input
                     type="text"
-                    className="flex-1 rounded-xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm text-white focus:outline-none focus:border-gold-400"
+                    className="flex-1 rounded-xl px-4 py-2.5 text-sm focus:outline-none"
+                    style={{ border: '1.5px solid #E5E7EB', background: '#F8FAFC', color: '#111827' }}
                     placeholder="R-1..."
                     value={refundReceipt}
                     onChange={(e) => setRefundReceipt(e.target.value)}
                   />
                   <button
                     onClick={handleLookupReceipt}
-                    className="rounded-xl bg-gold-500 px-4 py-2 text-xs font-bold text-slate-950 hover:bg-gold-400"
+                    className="rounded-xl px-4 py-2 text-xs font-bold text-white"
+                    style={{ background: '#D97706' }}
                   >
                     {t.find}
                   </button>
@@ -2400,14 +2227,14 @@ export function POSPage() {
 
                 {refundSale && (
                   <div className="space-y-4">
-                    <div className="rounded-xl bg-slate-950 p-3 text-xs border border-white/5 space-y-1">
-                      <p><span className="text-slate-400">{t.date}:</span> {formatDate(refundSale.createdAt)}</p>
-                      <p><span className="text-slate-400">{t.cashier}:</span> {refundSale.user.name}</p>
-                      <p><span className="text-slate-400">{t.total}:</span> {formatCurrency(Number(refundSale.total))}</p>
+                    <div className="rounded-xl p-3 text-xs space-y-1" style={{ background: '#F8FAFC', border: '1px solid #E5E7EB' }}>
+                      <p style={{ color: '#111827' }}><span style={{ color: '#6B7280' }}>{t.date}:</span> {formatDate(refundSale.createdAt)}</p>
+                      <p style={{ color: '#111827' }}><span style={{ color: '#6B7280' }}>{t.cashier}:</span> {refundSale.user.name}</p>
+                      <p style={{ color: '#111827' }}><span style={{ color: '#6B7280' }}>{t.total}:</span> {formatCurrency(Number(refundSale.total))}</p>
                     </div>
 
                     <div className="space-y-2">
-                      <p className="text-xs font-bold text-white uppercase tracking-wider">{t.allItems}</p>
+                      <p className="text-xs font-bold uppercase tracking-wider" style={{ color: '#111827' }}>{t.allItems}</p>
                       {refundSale.items.map((item: any) => {
                         const maxQty = item.quantity;
                         const currQty = refundQuantities[item.productId] ?? 0;
@@ -2416,21 +2243,23 @@ export function POSPage() {
                         return (
                           <div
                             key={item.id}
-                            className="flex items-center justify-between gap-2.5 rounded-lg bg-slate-950 p-2.5 border border-white/5 text-xs"
+                            className="flex items-center justify-between gap-2.5 rounded-lg p-2.5 text-xs"
+                            style={{ background: '#F8FAFC', border: '1px solid #E5E7EB' }}
                           >
-                            <span className="flex-1 truncate">{localizedItemName}</span>
+                            <span className="flex-1 truncate" style={{ color: '#111827' }}>{localizedItemName}</span>
                             <div className="flex items-center gap-2">
                               <input
                                 type="number"
                                 min="0"
                                 max={maxQty}
-                                className="w-14 text-center rounded bg-slate-900 border border-white/10 p-1 font-mono text-white"
+                                className="w-14 text-center rounded p-1 font-mono focus:outline-none"
+                                style={{ background: '#FFFFFF', border: '1px solid #E5E7EB', color: '#111827' }}
                                 value={currQty}
                                 onChange={(e) =>
                                   handleItemRefundQtyChange(item.productId, Number(e.target.value), maxQty)
                                 }
                               />
-                              <span className="text-slate-400 font-mono">/ {maxQty}</span>
+                              <span className="font-mono" style={{ color: '#6B7280' }}>/ {maxQty}</span>
                             </div>
                           </div>
                         );
@@ -2438,10 +2267,11 @@ export function POSPage() {
                     </div>
 
                     <div>
-                      <label className="block text-xs text-slate-400 mb-1">{t.reason}</label>
+                      <label className="block text-xs mb-1" style={{ color: '#6B7280' }}>{t.reason}</label>
                       <input
                         type="text"
-                        className="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2.5 text-xs text-white focus:outline-none"
+                        className="w-full rounded-xl px-4 py-2.5 text-xs focus:outline-none"
+                        style={{ border: '1.5px solid #E5E7EB', background: '#F8FAFC', color: '#111827' }}
                         value={refundReason}
                         onChange={(e) => setRefundReason(e.target.value)}
                       />
@@ -2450,13 +2280,15 @@ export function POSPage() {
                     <div className="flex gap-2">
                       <button
                         onClick={closeModals}
-                        className="flex-1 rounded-xl border border-white/15 bg-transparent py-2.5 text-xs font-semibold hover:bg-white/5"
+                        className="flex-1 rounded-xl py-2.5 text-xs font-semibold"
+                        style={{ border: '1px solid #E5E7EB', background: '#F3F4F6', color: '#374151' }}
                       >
                         {t.cancel}
                       </button>
                       <button
                         onClick={handleProcessRefundSubmit}
-                        className="flex-1 rounded-xl bg-gold-500 py-2.5 text-xs font-bold text-slate-950 hover:bg-gold-400"
+                        className="flex-1 rounded-xl py-2.5 text-xs font-bold text-white"
+                        style={{ background: '#D97706' }}
                       >
                         {t.confirm}
                       </button>
@@ -2471,29 +2303,30 @@ export function POSPage() {
 
       {/* MODAL: DRAWER SHIFT MANAGEMENT */}
       {activeModal === 'drawer' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm">
-          <div className="w-[450px] rounded-2xl border border-white/10 bg-slate-900 p-6 shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm" style={{ background: 'rgba(0,0,0,0.4)' }}>
+          <div className="w-[450px] rounded-2xl p-6 shadow-2xl" style={{ background: '#FFFFFF', border: '1px solid #E5E7EB' }}>
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-bold uppercase tracking-wider text-gold-400">
+              <h3 className="text-sm font-bold uppercase tracking-wider" style={{ color: '#D97706' }}>
                 🪙 {t.cashTillSession}
               </h3>
-              <button onClick={closeModals} className="text-slate-400 hover:text-white">✕</button>
+              <button onClick={closeModals} style={{ color: '#6B7280', background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px' }}>✕</button>
             </div>
 
             {drawerLoading ? (
-              <p className="text-center text-xs text-slate-400 py-8">Loading drawer session...</p>
+              <p className="text-center text-xs py-8" style={{ color: '#6B7280' }}>Loading drawer session...</p>
             ) : !drawer ? (
               <div className="space-y-4">
-                <p className="text-xs text-slate-300 leading-relaxed">
+                <p className="text-xs leading-relaxed" style={{ color: '#374151' }}>
                   {t.openingFloatRequired}
                 </p>
 
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">{t.openingFloat}</label>
+                  <label className="block text-xs mb-1" style={{ color: '#6B7280' }}>{t.openingFloat}</label>
                   <input
                     type="number"
                     step="1"
-                    className="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm font-mono text-white focus:outline-none"
+                    className="w-full rounded-xl px-4 py-2.5 text-sm font-mono focus:outline-none"
+                    style={{ border: '1.5px solid #E5E7EB', background: '#F8FAFC', color: '#111827' }}
                     value={drawerFloatInput}
                     onChange={(e) => setDrawerFloatInput(e.target.value)}
                   />
@@ -2501,46 +2334,49 @@ export function POSPage() {
 
                 <button
                   onClick={handleOpenDrawer}
-                  className="w-full rounded-xl bg-gold-500 py-2.5 text-xs font-bold text-slate-950 hover:bg-gold-400"
+                  className="w-full rounded-xl py-2.5 text-xs font-bold text-white"
+                  style={{ background: '#16A34A' }}
                 >
                   🚀 {t.openSession}
                 </button>
               </div>
             ) : (
               <div className="space-y-4">
-                <div className="rounded-xl bg-slate-950 p-4 border border-white/5 space-y-2 text-xs font-mono">
+                <div className="rounded-xl p-4 space-y-2 text-xs font-mono" style={{ background: '#F8FAFC', border: '1px solid #E5E7EB' }}>
                   <div className="flex justify-between">
-                    <span className="text-slate-400">{t.activeSession}:</span>
-                    <span className="text-mint-400 font-bold">#{drawer.id.slice(0, 8)}</span>
+                    <span style={{ color: '#6B7280' }}>{t.activeSession}:</span>
+                    <span style={{ color: '#16A34A', fontWeight: 700 }}>#{drawer.id.slice(0, 8)}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-slate-400">{t.openingFloat}:</span>
-                    <span>{formatCurrency(Number(drawer.openingFloat))}</span>
+                    <span style={{ color: '#6B7280' }}>{t.openingFloat}:</span>
+                    <span style={{ color: '#111827' }}>{formatCurrency(Number(drawer.openingFloat))}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-slate-400">{t.date}:</span>
-                    <span>{formatDate(drawer.openedAt)}</span>
+                    <span style={{ color: '#6B7280' }}>{t.date}:</span>
+                    <span style={{ color: '#111827' }}>{formatDate(drawer.openedAt)}</span>
                   </div>
                 </div>
 
                 {/* Cash in / out movement loggers */}
-                <div className="rounded-xl border border-white/5 bg-slate-950/40 p-4 space-y-3">
-                  <p className="text-xs font-bold text-white uppercase tracking-wider">Log Till Adjustment</p>
+                <div className="rounded-xl p-4 space-y-3" style={{ background: '#F8FAFC', border: '1px solid #E5E7EB' }}>
+                  <p className="text-xs font-bold uppercase tracking-wider" style={{ color: '#111827' }}>Log Till Adjustment</p>
                   <div>
-                    <label className="block text-[10px] text-slate-400 mb-1">{t.amount}</label>
+                    <label className="block text-[10px] mb-1" style={{ color: '#6B7280' }}>{t.amount}</label>
                     <input
                       type="number"
                       step="1"
-                      className="w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2 text-xs font-mono text-white focus:outline-none"
+                      className="w-full rounded-lg px-3 py-2 text-xs font-mono focus:outline-none"
+                      style={{ border: '1px solid #E5E7EB', background: '#FFFFFF', color: '#111827' }}
                       value={cashMovementAmount}
                       onChange={(e) => setCashMovementAmount(e.target.value)}
                     />
                   </div>
                   <div>
-                    <label className="block text-[10px] text-slate-400 mb-1">{t.reason}</label>
+                    <label className="block text-[10px] mb-1" style={{ color: '#6B7280' }}>{t.reason}</label>
                     <input
                       type="text"
-                      className="w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2 text-xs text-white focus:outline-none"
+                      className="w-full rounded-lg px-3 py-2 text-xs focus:outline-none"
+                      style={{ border: '1px solid #E5E7EB', background: '#FFFFFF', color: '#111827' }}
                       value={cashMovementReason}
                       onChange={(e) => setCashMovementReason(e.target.value)}
                     />
@@ -2549,13 +2385,15 @@ export function POSPage() {
                   <div className="flex gap-2">
                     <button
                       onClick={() => handleCashMovement('CASH_IN')}
-                      className="flex-1 rounded bg-slate-900 border border-white/10 hover:bg-slate-950 text-white font-bold py-1.5 text-[10px]"
+                      className="flex-1 rounded font-bold py-1.5 text-[10px] hover:opacity-80"
+                      style={{ background: '#ECFDF5', border: '1px solid #BBF7D0', color: '#16A34A' }}
                     >
                       📥 {t.cashIn}
                     </button>
                     <button
                       onClick={() => handleCashMovement('CASH_OUT')}
-                      className="flex-1 rounded bg-slate-900 border border-white/10 hover:bg-slate-950 text-white font-bold py-1.5 text-[10px]"
+                      className="flex-1 rounded font-bold py-1.5 text-[10px] hover:opacity-80"
+                      style={{ background: '#FEF2F2', border: '1px solid #FECACA', color: '#DC2626' }}
                     >
                       📤 {t.cashOut}
                     </button>
@@ -2563,19 +2401,21 @@ export function POSPage() {
                 </div>
 
                 {/* Close Session Shift Input */}
-                <div className="border-t border-white/5 pt-3">
-                  <label className="block text-xs text-slate-400 mb-1">{t.closingFloat}</label>
+                <div style={{ borderTop: '1px solid #E5E7EB', paddingTop: 12 }}>
+                  <label className="block text-xs mb-1" style={{ color: '#6B7280' }}>{t.closingFloat}</label>
                   <div className="flex gap-2">
                     <input
                       type="number"
                       step="1"
-                      className="flex-1 rounded-xl border border-white/10 bg-slate-950 px-4 py-2.5 text-sm font-mono text-white focus:outline-none"
+                      className="flex-1 rounded-xl px-4 py-2.5 text-sm font-mono focus:outline-none"
+                      style={{ border: '1.5px solid #E5E7EB', background: '#F8FAFC', color: '#111827' }}
                       value={drawerFloatInput}
                       onChange={(e) => setDrawerFloatInput(e.target.value)}
                     />
                     <button
                       onClick={handleCloseDrawer}
-                      className="rounded-xl bg-red-600 px-4 text-xs font-bold text-white hover:bg-red-500 transition-colors"
+                      className="rounded-xl px-4 text-xs font-bold text-white hover:opacity-80 transition-colors"
+                      style={{ background: '#DC2626' }}
                     >
                       🏁 {t.closeSession}
                     </button>
@@ -2589,74 +2429,73 @@ export function POSPage() {
 
       {/* MODAL: SHIFT Z-REPORT DETAIL */}
       {activeModal === 'zreport' && zReportData && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm">
-          <div className="w-[450px] max-h-[85vh] overflow-y-auto rounded-2xl border border-white/10 bg-slate-900 p-6 shadow-2xl scrollbar-thin">
+        <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm" style={{ background: 'rgba(0,0,0,0.4)' }}>
+          <div className="w-[450px] max-h-[85vh] overflow-y-auto rounded-2xl p-6 shadow-2xl" style={{ background: '#FFFFFF', border: '1px solid #E5E7EB' }}>
             <div className="text-center mb-4">
-              <h3 className="text-lg font-bold text-gold-400 uppercase tracking-wider">{t.zReport}</h3>
-              <p className="text-xs text-slate-400">{t.zReportDescription}</p>
+              <h3 className="text-lg font-bold uppercase tracking-wider" style={{ color: '#D97706' }}>{t.zReport}</h3>
+              <p className="text-xs" style={{ color: '#6B7280' }}>{t.zReportDescription}</p>
             </div>
 
-            <div className="rounded-xl bg-slate-950 p-4 border border-white/5 space-y-2 text-xs font-mono">
-              <div className="flex justify-between border-b border-white/5 pb-1">
-                <span className="text-slate-400">Session Start:</span>
-                <span>{formatDate(zReportData.sessionStart)}</span>
+            <div className="rounded-xl p-4 space-y-2 text-xs font-mono" style={{ background: '#F8FAFC', border: '1px solid #E5E7EB' }}>
+              <div className="flex justify-between pb-1" style={{ borderBottom: '1px solid #E5E7EB' }}>
+                <span style={{ color: '#6B7280' }}>Session Start:</span>
+                <span style={{ color: '#111827' }}>{formatDate(zReportData.sessionStart)}</span>
               </div>
-              <div className="flex justify-between border-b border-white/5 pb-1">
-                <span className="text-slate-400">Session End:</span>
-                <span>{formatDate(zReportData.sessionEnd)}</span>
+              <div className="flex justify-between pb-1" style={{ borderBottom: '1px solid #E5E7EB' }}>
+                <span style={{ color: '#6B7280' }}>Session End:</span>
+                <span style={{ color: '#111827' }}>{formatDate(zReportData.sessionEnd)}</span>
               </div>
-              <div className="flex justify-between border-b border-white/5 pb-1">
-                <span className="text-slate-400">{t.cashier}:</span>
-                <span className="font-bold">{zReportData.cashier}</span>
+              <div className="flex justify-between pb-1" style={{ borderBottom: '1px solid #E5E7EB' }}>
+                <span style={{ color: '#6B7280' }}>{t.cashier}:</span>
+                <span style={{ color: '#111827', fontWeight: 700 }}>{zReportData.cashier}</span>
               </div>
 
-              <div className="h-[1px] bg-white/10 my-3" />
+              <div style={{ height: 1, background: '#E5E7EB', margin: '8px 0' }} />
 
               <div className="flex justify-between">
-                <span className="text-slate-400">{t.floatStart}:</span>
-                <span>{formatCurrency(zReportData.openingFloat)}</span>
+                <span style={{ color: '#6B7280' }}>{t.floatStart}:</span>
+                <span style={{ color: '#111827' }}>{formatCurrency(zReportData.openingFloat)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-400">{t.cashPayments}:</span>
-                <span>{formatCurrency(zReportData.cashSales)}</span>
+                <span style={{ color: '#6B7280' }}>{t.cashPayments}:</span>
+                <span style={{ color: '#16A34A' }}>{formatCurrency(zReportData.cashSales)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-400">{t.cardPayments}:</span>
-                <span>{formatCurrency(zReportData.cardSales)}</span>
+                <span style={{ color: '#6B7280' }}>{t.cardPayments}:</span>
+                <span style={{ color: '#2563EB' }}>{formatCurrency(zReportData.cardSales)}</span>
               </div>
-              <div className="flex justify-between text-red-400">
+              <div className="flex justify-between" style={{ color: '#DC2626' }}>
                 <span>Total Voids ({zReportData.voidsCount}):</span>
                 <span>-{formatCurrency(zReportData.totalVoids)}</span>
               </div>
-              <div className="flex justify-between text-red-400">
+              <div className="flex justify-between" style={{ color: '#DC2626' }}>
                 <span>Total Refunds ({zReportData.refundsCount}):</span>
                 <span>-{formatCurrency(zReportData.totalRefunds)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-400">{t.cashIn}:</span>
-                <span>+{formatCurrency(zReportData.cashIn)}</span>
+                <span style={{ color: '#6B7280' }}>{t.cashIn}:</span>
+                <span style={{ color: '#16A34A' }}>+{formatCurrency(zReportData.cashIn)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-400">{t.cashOut}:</span>
-                <span>-{formatCurrency(zReportData.cashOut)}</span>
+                <span style={{ color: '#6B7280' }}>{t.cashOut}:</span>
+                <span style={{ color: '#DC2626' }}>-{formatCurrency(zReportData.cashOut)}</span>
               </div>
 
-              <div className="h-[1px] bg-white/10 my-3" />
+              <div style={{ height: 1, background: '#E5E7EB', margin: '8px 0' }} />
 
-              <div className="flex justify-between font-bold text-white">
+              <div className="flex justify-between font-bold" style={{ color: '#111827' }}>
                 <span>{t.expectedDrawerCash}:</span>
                 <span>{formatCurrency(zReportData.expectedCash)}</span>
               </div>
               {zReportData.closingFloat !== undefined && (
                 <>
-                  <div className="flex justify-between font-bold text-white">
+                  <div className="flex justify-between font-bold" style={{ color: '#111827' }}>
                     <span>{t.countedDrawerCash}:</span>
                     <span>{formatCurrency(zReportData.closingFloat)}</span>
                   </div>
                   <div
-                    className={`flex justify-between font-bold border-t border-white/5 pt-1.5 ${
-                      Number(zReportData.difference) >= 0 ? 'text-mint-400' : 'text-red-400'
-                    }`}
+                    className="flex justify-between font-bold pt-1.5"
+                    style={{ borderTop: '1px solid #E5E7EB', color: Number(zReportData.difference) >= 0 ? '#16A34A' : '#DC2626' }}
                   >
                     <span>{t.overShortAudit}:</span>
                     <span>
@@ -2670,16 +2509,16 @@ export function POSPage() {
 
             <div className="mt-6 flex gap-2">
               <button
-                onClick={() => {
-                  window.print();
-                }}
-                className="flex-1 rounded-xl border border-white/15 bg-white/5 py-2.5 text-xs font-bold text-slate-300 hover:bg-white/10 transition-colors"
+                onClick={() => { window.print(); }}
+                className="flex-1 rounded-xl py-2.5 text-xs font-bold hover:opacity-80 transition-colors"
+                style={{ border: '1px solid #E5E7EB', background: '#F3F4F6', color: '#374151' }}
               >
                 🖨️ {t.printAuditor}
               </button>
               <button
                 onClick={closeModals}
-                className="flex-1 rounded-xl bg-gold-500 py-2.5 text-xs font-bold text-slate-950 hover:bg-gold-400 transition-colors"
+                className="flex-1 rounded-xl py-2.5 text-xs font-bold text-white hover:opacity-80 transition-colors"
+                style={{ background: '#2563EB' }}
               >
                 {t.ok}
               </button>
@@ -2690,17 +2529,17 @@ export function POSPage() {
 
       {/* MODAL: RECALL PARKED DIALOG */}
       {activeModal === 'holds' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm">
-          <div className="w-[500px] max-h-[80vh] overflow-y-auto rounded-2xl border border-white/10 bg-slate-900 p-5 shadow-2xl scrollbar-thin">
+        <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm" style={{ background: 'rgba(0,0,0,0.4)' }}>
+          <div className="w-[500px] max-h-[80vh] overflow-y-auto rounded-2xl p-5 shadow-2xl" style={{ background: '#FFFFFF', border: '1px solid #E5E7EB' }}>
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-bold uppercase tracking-wider text-gold-400">
+              <h3 className="text-sm font-bold uppercase tracking-wider" style={{ color: '#D97706' }}>
                 📥 {t.recallHolds}
               </h3>
-              <button onClick={closeModals} className="text-slate-400 hover:text-white">✕</button>
+              <button onClick={closeModals} style={{ color: '#6B7280', background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px' }}>✕</button>
             </div>
 
             {holds.length === 0 ? (
-              <p className="text-center text-xs text-slate-400 py-8">{t.noParkedBaskets}</p>
+              <p className="text-center text-xs py-8" style={{ color: '#6B7280' }}>{t.noParkedBaskets}</p>
             ) : (
               <div className="space-y-2">
                 {holds.map((hold) => {
@@ -2712,19 +2551,18 @@ export function POSPage() {
                     <button
                       key={hold.id}
                       onClick={() => void resumeHold(hold)}
-                      className={`w-full rounded-xl border border-white/5 bg-slate-950/40 p-4 ${
-                        isRtl ? 'text-right' : 'text-left'
-                      } transition hover:border-gold-500/30 hover:bg-slate-950`}
+                      className={`w-full rounded-xl p-4 ${isRtl ? 'text-right' : 'text-left'} transition hover:opacity-80`}
+                      style={{ background: '#F8FAFC', border: '1px solid #E5E7EB' }}
                     >
                       <div className="flex items-center justify-between gap-3 text-xs">
                         <div>
-                          <p className="font-bold text-white">{t.basketId}: #{hold.id.slice(0, 8)}</p>
-                          <p className="text-[10px] text-slate-400">{t.cashier}: {hold.cashier?.name}</p>
-                          <p className="text-[10px] text-slate-400">{t.itemsCountLabel}: {itemCount}</p>
+                          <p className="font-bold" style={{ color: '#111827' }}>{t.basketId}: #{hold.id.slice(0, 8)}</p>
+                          <p className="text-[10px]" style={{ color: '#6B7280' }}>{t.cashier}: {hold.cashier?.name}</p>
+                          <p className="text-[10px]" style={{ color: '#6B7280' }}>{t.itemsCountLabel}: {itemCount}</p>
                         </div>
                         <div className="text-right">
-                          <p className="text-[10px] text-slate-400">{formatDate(hold.updatedAt)}</p>
-                          <span className="mt-1 inline-block rounded bg-gold-500/10 px-2.5 py-1 text-[10px] font-bold text-gold-400">
+                          <p className="text-[10px]" style={{ color: '#6B7280' }}>{formatDate(hold.updatedAt)}</p>
+                          <span className="mt-1 inline-block rounded px-2.5 py-1 text-[10px] font-bold" style={{ background: '#EFF6FF', color: '#2563EB' }}>
                             {t.recallBasketBtn}
                           </span>
                         </div>

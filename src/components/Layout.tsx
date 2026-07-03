@@ -55,7 +55,7 @@ export function Layout() {
 
           <div className="admin-sidebar__store">
             <span className="admin-sidebar__store-dot" />
-            Store #1042 · Open
+            Single-store installation
           </div>
 
           <nav className="admin-sidebar__nav">

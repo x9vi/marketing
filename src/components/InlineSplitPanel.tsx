@@ -131,27 +131,28 @@ export function InlineSplitPanel({ saleTotal, lang, onConfirm, onBack }: InlineS
     <div
       className="flex flex-col flex-shrink-0"
       style={{
-        borderTop: '1px solid rgba(168,85,247,0.2)',
+        borderTop: '1px solid #E9D5FF',
       }}
     >
       {/* Header */}
       <div
         className="flex items-center justify-between px-3 py-2 flex-shrink-0"
         style={{
-          background: 'linear-gradient(180deg, rgba(0,0,0,0.7) 0%, rgba(2,6,23,0.9) 100%)',
-          borderBottom: '1px solid rgba(255,255,255,0.05)',
+          background: '#F8FAFC',
+          borderBottom: '1px solid #E5E7EB',
         }}
       >
         <button
           onClick={onBack}
           disabled={cardStep !== 'idle'}
-          className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-[10px] font-black text-slate-500 hover:text-white hover:bg-white/8 active:scale-95 transition-all disabled:opacity-30"
+          className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-[10px] font-black active:scale-95 transition-all disabled:opacity-30"
+          style={{ color: '#6B7280', background: 'none', border: 'none', cursor: 'pointer' }}
         >
           {t.back}
         </button>
         <div className="flex items-center gap-1.5">
           <span className="text-sm leading-none">⚖️</span>
-          <span className="text-[10px] font-black uppercase tracking-widest text-purple-400">
+          <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: '#7C3AED' }}>
             {t.splitPayment}
           </span>
         </div>
@@ -161,42 +162,42 @@ export function InlineSplitPanel({ saleTotal, lang, onConfirm, onBack }: InlineS
       {/* Split Body */}
       <div
         className="flex flex-col gap-2.5 p-3"
-        style={{ background: 'linear-gradient(180deg, #000000 0%, #020617 100%)' }}
+        style={{ background: '#FFFFFF' }}
       >
         {cardStep !== 'idle' ? (
           /* Card terminal simulation */
           <div
             className="flex flex-col items-center justify-center gap-3 rounded-xl py-8"
             style={{
-              background: 'rgba(15,23,42,0.7)',
+              background: '#F8FAFC',
               border: cardStep === 'approved'
-                ? '1px solid rgba(52,211,153,0.4)'
-                : '1px solid rgba(168,85,247,0.3)',
+                ? '1px solid #BBF7D0'
+                : '1px solid #E9D5FF',
             }}
           >
             {cardStep === 'connecting' && (
               <>
-                <span className="h-8 w-8 rounded-full border-[3px] border-purple-500 border-t-transparent" style={{ animation: 'spin 0.8s linear infinite' }} />
-                <p className="text-[11px] font-semibold text-slate-300">{t.connecting}</p>
+                <span className="h-8 w-8 rounded-full border-[3px] border-t-transparent" style={{ borderColor: '#7C3AED', borderTopColor: 'transparent', animation: 'spin 0.8s linear infinite' }} />
+                <p className="text-[11px] font-semibold" style={{ color: '#374151' }}>{t.connecting}</p>
               </>
             )}
             {cardStep === 'tap' && (
               <>
                 <span className="text-4xl" style={{ animation: 'bounce 1s ease infinite' }}>💳</span>
-                <p className="text-[11px] font-black text-white uppercase tracking-wider text-center px-4">{t.tapCard}</p>
-                <p className="text-[10px] text-purple-400 font-mono">{formatCurrency(cardAmt)}</p>
+                <p className="text-[11px] font-black uppercase tracking-wider text-center px-4" style={{ color: '#111827' }}>{t.tapCard}</p>
+                <p className="text-[10px] font-mono" style={{ color: '#7C3AED' }}>{formatCurrency(cardAmt)}</p>
               </>
             )}
             {cardStep === 'approving' && (
               <>
-                <span className="h-8 w-8 rounded-full border-[3px] border-emerald-500 border-t-transparent" style={{ animation: 'spin 0.8s linear infinite' }} />
-                <p className="text-[11px] font-semibold text-slate-300">{t.approving}</p>
+                <span className="h-8 w-8 rounded-full border-[3px] border-t-transparent" style={{ borderColor: '#16A34A', borderTopColor: 'transparent', animation: 'spin 0.8s linear infinite' }} />
+                <p className="text-[11px] font-semibold" style={{ color: '#374151' }}>{t.approving}</p>
               </>
             )}
             {cardStep === 'approved' && (
               <>
-                <span className="text-4xl text-emerald-400">✓</span>
-                <p className="text-[12px] font-black text-emerald-400 uppercase tracking-widest">{t.approved}</p>
+                <span className="text-4xl" style={{ color: '#16A34A' }}>✓</span>
+                <p className="text-[12px] font-black uppercase tracking-widest" style={{ color: '#16A34A' }}>{t.approved}</p>
               </>
             )}
           </div>
@@ -206,13 +207,12 @@ export function InlineSplitPanel({ saleTotal, lang, onConfirm, onBack }: InlineS
             <div
               className="rounded-xl p-2.5 text-center"
               style={{
-                background: 'rgba(15,23,42,0.95)',
-                border: '1px solid rgba(168,85,247,0.15)',
-                boxShadow: 'inset 0 0 16px rgba(0,0,0,0.7)',
+                background: '#F5F3FF',
+                border: '1px solid #E9D5FF',
               }}
             >
-              <p className="text-[7px] uppercase tracking-widest text-slate-600 font-black">{t.totalDue}</p>
-              <p className="font-mono text-xl font-black text-purple-300 mt-0.5 tabular-nums">
+              <p className="text-[7px] uppercase tracking-widest font-black" style={{ color: '#6B7280' }}>{t.totalDue}</p>
+              <p className="font-mono text-xl font-black mt-0.5 tabular-nums" style={{ color: '#7C3AED' }}>
                 {formatCurrency(saleTotal)}
               </p>
             </div>
@@ -222,27 +222,27 @@ export function InlineSplitPanel({ saleTotal, lang, onConfirm, onBack }: InlineS
               className="rounded-lg px-3 py-1.5 text-center"
               style={{
                 background: isExact
-                  ? 'rgba(16,185,129,0.1)'
+                  ? '#ECFDF5'
                   : isOver
-                  ? 'rgba(239,68,68,0.08)'
-                  : 'rgba(245,158,11,0.08)',
+                  ? '#FEF2F2'
+                  : '#FFFBEB',
                 border: isExact
-                  ? '1px solid rgba(52,211,153,0.25)'
+                  ? '1px solid #BBF7D0'
                   : isOver
-                  ? '1px solid rgba(239,68,68,0.2)'
-                  : '1px solid rgba(245,158,11,0.2)',
+                  ? '1px solid #FECACA'
+                  : '1px solid #FDE68A',
               }}
             >
               <p
                 className="text-[9px] font-black"
                 style={{
-                  color: isExact ? '#34d399' : isOver ? '#f87171' : '#fbbf24',
+                  color: isExact ? '#16A34A' : isOver ? '#DC2626' : '#D97706',
                 }}
               >
                 {isExact ? t.perfectMatch : isOver ? t.overpayWarning : t.shortWarning}
               </p>
               {!isExact && (
-                <p className="text-[8px] font-mono text-slate-500 mt-0.5">
+                <p className="text-[8px] font-mono mt-0.5" style={{ color: '#6B7280' }}>
                   {t.allocated}: {formatCurrency(totalAllocated)}
                 </p>
               )}
@@ -254,9 +254,9 @@ export function InlineSplitPanel({ saleTotal, lang, onConfirm, onBack }: InlineS
                 onClick={quickHalf}
                 className="rounded-lg py-1.5 text-[9px] font-black transition-all active:scale-95"
                 style={{
-                  border: '1px solid rgba(168,85,247,0.2)',
-                  background: 'rgba(168,85,247,0.07)',
-                  color: '#c084fc',
+                  border: '1px solid #E9D5FF',
+                  background: '#F5F3FF',
+                  color: '#7C3AED',
                 }}
               >
                 ⚖️ {t.half}
@@ -265,9 +265,9 @@ export function InlineSplitPanel({ saleTotal, lang, onConfirm, onBack }: InlineS
                 onClick={setMaxCash}
                 className="rounded-lg py-1.5 text-[9px] font-black transition-all active:scale-95"
                 style={{
-                  border: '1px solid rgba(52,211,153,0.2)',
-                  background: 'rgba(52,211,153,0.07)',
-                  color: '#34d399',
+                  border: '1px solid #BBF7D0',
+                  background: '#ECFDF5',
+                  color: '#16A34A',
                 }}
               >
                 💵 {t.setMax}
@@ -276,15 +276,15 @@ export function InlineSplitPanel({ saleTotal, lang, onConfirm, onBack }: InlineS
 
             {/* Cash input */}
             <div>
-              <label className="block text-[8px] font-black uppercase tracking-widest text-slate-600 mb-1">
+              <label className="block text-[8px] font-black uppercase tracking-widest mb-1" style={{ color: '#6B7280' }}>
                 💵 {t.cashAmount}
               </label>
               <input
                 type="number"
                 step="250"
                 min="0"
-                className="w-full rounded-lg border bg-slate-950 px-3 py-2 text-sm font-mono text-emerald-300 focus:outline-none transition-colors"
-                style={{ borderColor: cashAmt > 0 ? 'rgba(52,211,153,0.3)' : 'rgba(255,255,255,0.08)' }}
+                className="w-full rounded-lg border px-3 py-2 text-sm font-mono focus:outline-none transition-colors"
+                style={{ background: '#FFFFFF', borderColor: cashAmt > 0 ? '#86EFAC' : '#E5E7EB', color: '#16A34A' }}
                 value={cashInput}
                 onChange={(e) => handleCashChange(e.target.value)}
                 placeholder="0"
@@ -293,15 +293,15 @@ export function InlineSplitPanel({ saleTotal, lang, onConfirm, onBack }: InlineS
 
             {/* Card input */}
             <div>
-              <label className="block text-[8px] font-black uppercase tracking-widest text-slate-600 mb-1">
+              <label className="block text-[8px] font-black uppercase tracking-widest mb-1" style={{ color: '#6B7280' }}>
                 💳 {t.cardAmount}
               </label>
               <input
                 type="number"
                 step="250"
                 min="0"
-                className="w-full rounded-lg border bg-slate-950 px-3 py-2 text-sm font-mono text-indigo-300 focus:outline-none transition-colors"
-                style={{ borderColor: cardAmt > 0 ? 'rgba(99,102,241,0.3)' : 'rgba(255,255,255,0.08)' }}
+                className="w-full rounded-lg border px-3 py-2 text-sm font-mono focus:outline-none transition-colors"
+                style={{ background: '#FFFFFF', borderColor: cardAmt > 0 ? '#BFDBFE' : '#E5E7EB', color: '#2563EB' }}
                 value={cardInput}
                 onChange={(e) => handleCardChange(e.target.value)}
                 placeholder="0"
@@ -316,15 +316,15 @@ export function InlineSplitPanel({ saleTotal, lang, onConfirm, onBack }: InlineS
               style={
                 isExact && (cashAmt > 0 || cardAmt > 0)
                   ? {
-                      background: 'linear-gradient(135deg, #7c3aed 0%, #a855f7 100%)',
+                      background: '#7C3AED',
                       color: '#fff',
-                      boxShadow: '0 4px 20px rgba(168,85,247,0.4), 0 0 0 1px rgba(192,132,252,0.3)',
+                      boxShadow: '0 4px 16px rgba(124,58,237,0.35)',
                     }
                   : {
-                      background: '#0f172a',
-                      color: '#334155',
+                      background: '#F3F4F6',
+                      color: '#9CA3AF',
                       cursor: 'not-allowed',
-                      border: '1px solid rgba(255,255,255,0.04)',
+                      border: '1px solid #E5E7EB',
                     }
               }
             >
@@ -333,7 +333,8 @@ export function InlineSplitPanel({ saleTotal, lang, onConfirm, onBack }: InlineS
 
             <button
               onClick={onBack}
-              className="w-full text-[9px] font-black text-slate-600 hover:text-slate-400 transition-colors py-1"
+              className="w-full text-[9px] font-black transition-colors py-1"
+              style={{ color: '#9CA3AF', background: 'none', border: 'none', cursor: 'pointer' }}
             >
               {t.cancel}
             </button>

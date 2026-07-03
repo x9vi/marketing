@@ -1,6 +1,8 @@
 import app from './app.js';
 import { env } from './config/env.js';
 import { prisma } from './lib/prisma.js';
+import { bootstrapSystem } from './lib/bootstrap.js';
+await bootstrapSystem();
 const server = app.listen(env.port, () => {
     console.log(`API server running on http://localhost:${env.port}`);
 });

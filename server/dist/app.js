@@ -15,6 +15,7 @@ import { prisma } from './lib/prisma.js';
 import { authRequired, authenticate, requireRole } from './lib/auth.js';
 import { currencyFormatter, toNumber } from './lib/money.js';
 import { errorHandler, notFound } from './middleware/error.js';
+import { defaultSystemSettings } from './lib/bootstrap.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const uploadsDir = path.resolve(__dirname, '..', env.uploadsDir.replace(/^server[\/]/, ''));
@@ -29,13 +30,32 @@ const upload = multer({
     })
 });
 const app = express();
-app.use(cors({ origin: env.clientUrl, credentials: true }));
+function isDevClientOrigin(origin) {
+    return /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+}
+app.use(cors({
+    origin(origin, callback) {
+        if (!origin || origin === env.clientUrl || isDevClientOrigin(origin)) {
+            callback(null, true);
+            return;
+        }
+        callback(new Error('Not allowed by CORS'));
+    },
+    credentials: true
+}));
 app.use(express.json({ limit: '10mb' }));
 app.use(cookieParser());
 app.use('/uploads', express.static(uploadsDir));
 const money = currencyFormatter(env.currencyCode);
 function sendAuthUser(user) {
-    return { id: user.id, email: user.email, name: user.name, role: user.role, active: user.active ?? true };
+    return {
+        id: user.id,
+        username: user.username,
+        email: user.email ?? null,
+        name: user.name,
+        role: user.role,
+        active: user.active ?? true
+    };
 }
 function logActivity(userId, action, entity, entityId, metadata) {
     return prisma.activityLog.create({
@@ -53,11 +73,16 @@ function productWhere(query) {
         return undefined;
     return {
         OR: [
-            { name: { contains: query, mode: 'insensitive' } },
-            { sku: { contains: query, mode: 'insensitive' } },
-            { barcode: { contains: query, mode: 'insensitive' } }
+            { name: { contains: query } },
+            { sku: { contains: query } },
+            { barcode: { contains: query } }
         ]
     };
+}
+function asStringArray(value) {
+    if (!Array.isArray(value))
+        return [];
+    return value.filter((item) => typeof item === 'string');
 }
 function buildDiscount(subtotal, discountType, discountValue) {
     if (!discountType || !discountValue)
@@ -85,11 +110,11 @@ app.get('/health', (_req, res) => {
 });
 app.post('/auth/login', async (req, res, next) => {
     try {
-        const { email, password } = req.body;
-        if (!email || !password) {
-            return res.status(400).json({ message: 'Email and password are required' });
+        const { username, password } = req.body;
+        if (!username || !password) {
+            return res.status(400).json({ message: 'Username and password are required' });
         }
-        const result = await authenticate(email, password);
+        const result = await authenticate(username, password);
         if (!result) {
             return res.status(401).json({ message: 'Invalid credentials' });
         }
@@ -102,7 +127,7 @@ app.post('/auth/login', async (req, res, next) => {
         if (result.user.role === Role.CASHIER) {
             await prisma.cashierSession.create({ data: { userId: result.user.id } });
         }
-        await logActivity(result.user.id, 'auth.login', 'user', result.user.id, { email: result.user.email });
+        await logActivity(result.user.id, 'auth.login', 'user', result.user.id, { username: result.user.username });
         res.json({ user: sendAuthUser(result.authUser) });
     }
     catch (error) {
@@ -257,11 +282,22 @@ app.put('/products/:id', authRequired, requireRole(Role.ADMIN, Role.STOCK_MANAGE
 app.delete('/products/:id', authRequired, requireRole(Role.ADMIN, Role.STOCK_MANAGER), async (req, res, next) => {
     try {
         const id = String(req.params.id);
+        // Check if product has sales or refunds
+        const saleItems = await prisma.saleItem.count({ where: { productId: id } });
+        const refundItems = await prisma.refundItem.count({ where: { productId: id } });
+        if (saleItems > 0 || refundItems > 0) {
+            return res.status(400).json({ message: 'Cannot delete product because it has past sales or refunds. Please deactivate it instead.' });
+        }
+        // Safe to delete: clean up inventory history first, then delete product
+        await prisma.inventoryMovement.deleteMany({ where: { productId: id } });
         await prisma.product.delete({ where: { id } });
         await logActivity(req.user?.id, 'product.delete', 'product', id);
         res.json({ ok: true });
     }
     catch (error) {
+        if (error.code === 'P2003') {
+            return res.status(400).json({ message: 'Cannot delete product because it has past sales or inventory history. Please deactivate it instead.' });
+        }
         next(error);
     }
 });
@@ -302,6 +338,11 @@ app.put('/categories/:id', authRequired, requireRole(Role.ADMIN, Role.STOCK_MANA
 app.delete('/categories/:id', authRequired, requireRole(Role.ADMIN, Role.STOCK_MANAGER), async (req, res, next) => {
     try {
         const id = String(req.params.id);
+        // Check if any products use this category before deleting
+        const productCount = await prisma.product.count({ where: { categoryId: id } });
+        if (productCount > 0) {
+            return res.status(400).json({ message: 'Cannot delete category because it has products assigned to it. Please reassign or delete those products first.' });
+        }
         await prisma.category.delete({ where: { id } });
         await logActivity(req.user?.id, 'category.delete', 'category', id);
         res.json({ ok: true });
@@ -358,9 +399,9 @@ app.get('/customers', authRequired, async (req, res, next) => {
             where: query
                 ? {
                     OR: [
-                        { name: { contains: query, mode: 'insensitive' } },
-                        { phone: { contains: query, mode: 'insensitive' } },
-                        { email: { contains: query, mode: 'insensitive' } }
+                        { name: { contains: query } },
+                        { phone: { contains: query } },
+                        { email: { contains: query } }
                     ]
                 }
                 : undefined,
@@ -416,12 +457,7 @@ app.get('/users', authRequired, requireRole(Role.ADMIN), async (_req, res, next)
 });
 app.post('/users', authRequired, requireRole(Role.ADMIN), async (req, res, next) => {
     try {
-        const { email, name, password, role } = req.body;
-        if (!email || !name || !password || !role)
-            return res.status(400).json({ message: 'Missing employee fields' });
-        const user = await prisma.user.create({ data: { email, name, passwordHash: await bcrypt.hash(password, 10), role } });
-        await logActivity(req.user?.id, 'user.create', 'user', user.id, { role });
-        res.status(201).json({ user: sendAuthUser(user) });
+        return res.status(403).json({ message: 'This installation supports one administrator account only' });
     }
     catch (error) {
         next(error);
@@ -430,15 +466,21 @@ app.post('/users', authRequired, requireRole(Role.ADMIN), async (req, res, next)
 app.put('/users/:id', authRequired, requireRole(Role.ADMIN), async (req, res, next) => {
     try {
         const id = String(req.params.id);
+        if (req.user?.id !== id) {
+            return res.status(403).json({ message: 'Only the administrator account can be edited' });
+        }
         const user = await prisma.user.update({
             where: { id },
             data: {
+                username: req.body.username,
+                email: req.body.email ?? null,
                 name: req.body.name,
-                role: req.body.role,
-                active: req.body.active
+                role: Role.ADMIN,
+                active: req.body.active,
+                ...(req.body.password ? { passwordHash: await bcrypt.hash(String(req.body.password), 12) } : {})
             }
         });
-        await logActivity(req.user?.id, 'user.update', 'user', user.id);
+        await logActivity(req.user?.id, 'user.update', 'user', user.id, { username: user.username, passwordChanged: Boolean(req.body.password) });
         res.json({ user: sendAuthUser(user) });
     }
     catch (error) {
@@ -699,9 +741,11 @@ app.post('/sales/checkout', authRequired, async (req, res, next) => {
         const appliedPromos = [];
         for (const promo of promotions) {
             const config = promo.config;
-            const applicableItems = promoItems.filter(item => (promo.productIds.length === 0 && promo.categoryIds.length === 0) ||
-                promo.productIds.includes(item.productId) ||
-                promo.categoryIds.includes(item.categoryId));
+            const productIds = asStringArray(promo.productIds);
+            const categoryIds = asStringArray(promo.categoryIds);
+            const applicableItems = promoItems.filter(item => (productIds.length === 0 && categoryIds.length === 0) ||
+                productIds.includes(item.productId) ||
+                categoryIds.includes(item.categoryId));
             if (applicableItems.length === 0)
                 continue;
             if (promo.type === PromotionType.PERCENT_OFF) {
@@ -966,6 +1010,239 @@ app.get('/reports/export', authRequired, requireRole(Role.ADMIN), async (req, re
         next(error);
     }
 });
+// ─── REPORTS: EXTENDED ENDPOINTS ────────────────────────────────────────────
+app.get('/reports/dashboard', authRequired, requireRole(Role.ADMIN), async (req, res, next) => {
+    try {
+        const from = req.query.from ? startOfDay(new Date(String(req.query.from))) : subDays(startOfDay(new Date()), 29);
+        const to = req.query.to ? endOfDay(new Date(String(req.query.to))) : endOfDay(new Date());
+        const [completedSales, voidedCount, refunds] = await Promise.all([
+            prisma.sale.findMany({ where: { createdAt: { gte: from, lte: to }, status: SaleStatus.COMPLETED }, include: { items: true } }),
+            prisma.sale.count({ where: { createdAt: { gte: from, lte: to }, status: SaleStatus.VOIDED } }),
+            prisma.refund.findMany({ where: { createdAt: { gte: from, lte: to } }, select: { amount: true } }),
+        ]);
+        const revenue = completedSales.reduce((s, sale) => s + toNumber(sale.total), 0);
+        const cost = completedSales.reduce((s, sale) => s + sale.items.reduce((si, item) => si + toNumber(item.costPrice) * item.quantity, 0), 0);
+        const profit = revenue - cost;
+        const discounts = completedSales.reduce((s, sale) => s + toNumber(sale.discountAmount) + toNumber(sale.couponDiscount), 0);
+        const totalRefunds = refunds.reduce((s, r) => s + toNumber(r.amount), 0);
+        const itemsSold = completedSales.reduce((s, sale) => s + sale.items.reduce((si, item) => si + item.quantity, 0), 0);
+        const avgSale = completedSales.length > 0 ? revenue / completedSales.length : 0;
+        res.json({
+            revenue: +revenue.toFixed(2), cost: +cost.toFixed(2), profit: +profit.toFixed(2),
+            transactions: completedSales.length, itemsSold, avgSale: +avgSale.toFixed(2),
+            discounts: +discounts.toFixed(2), refunds: +totalRefunds.toFixed(2), voids: voidedCount,
+        });
+    }
+    catch (error) {
+        next(error);
+    }
+});
+app.get('/reports/sales-detail', authRequired, requireRole(Role.ADMIN), async (req, res, next) => {
+    try {
+        const from = req.query.from ? startOfDay(new Date(String(req.query.from))) : subDays(startOfDay(new Date()), 29);
+        const to = req.query.to ? endOfDay(new Date(String(req.query.to))) : endOfDay(new Date());
+        const cashierId = typeof req.query.cashierId === 'string' && req.query.cashierId ? req.query.cashierId : undefined;
+        const pm = typeof req.query.paymentMethod === 'string' && req.query.paymentMethod ? req.query.paymentMethod : undefined;
+        const page = Math.max(1, Number(req.query.page) || 1);
+        const limit = Math.min(100, Number(req.query.limit) || 50);
+        const where = { createdAt: { gte: from, lte: to }, status: SaleStatus.COMPLETED };
+        if (cashierId)
+            where.userId = cashierId;
+        if (pm)
+            where.payments = { some: { method: pm } };
+        const [sales, total, chartSales] = await Promise.all([
+            prisma.sale.findMany({ where, include: { payments: true, customer: true, user: true }, orderBy: { createdAt: 'desc' }, skip: (page - 1) * limit, take: limit }),
+            prisma.sale.count({ where }),
+            prisma.sale.findMany({ where: { createdAt: { gte: from, lte: to }, status: SaleStatus.COMPLETED }, select: { createdAt: true, total: true }, orderBy: { createdAt: 'asc' } }),
+        ]);
+        const dailyMap = {};
+        for (const s of chartSales) {
+            const d = format(s.createdAt, 'yyyy-MM-dd');
+            dailyMap[d] = (dailyMap[d] || 0) + toNumber(s.total);
+        }
+        const salesByDay = Object.entries(dailyMap).map(([date, t]) => ({ date, total: +t.toFixed(2) }));
+        res.json({ sales, total, page, limit, salesByDay });
+    }
+    catch (error) {
+        next(error);
+    }
+});
+app.get('/reports/payment-methods', authRequired, requireRole(Role.ADMIN), async (req, res, next) => {
+    try {
+        const from = req.query.from ? startOfDay(new Date(String(req.query.from))) : subDays(startOfDay(new Date()), 29);
+        const to = req.query.to ? endOfDay(new Date(String(req.query.to))) : endOfDay(new Date());
+        const payments = await prisma.salePayment.findMany({
+            where: { sale: { createdAt: { gte: from, lte: to }, status: SaleStatus.COMPLETED } },
+            select: { method: true, amount: true },
+        });
+        const bm = {};
+        for (const p of payments) {
+            if (!bm[p.method])
+                bm[p.method] = { count: 0, total: 0 };
+            bm[p.method].count++;
+            bm[p.method].total += toNumber(p.amount);
+        }
+        const grandTotal = Object.values(bm).reduce((s, b) => s + b.total, 0);
+        const result = Object.entries(bm).map(([method, b]) => ({ method, count: b.count, total: +b.total.toFixed(2), percentage: grandTotal > 0 ? +((b.total / grandTotal) * 100).toFixed(1) : 0 }));
+        res.json({ payments: result, grandTotal: +grandTotal.toFixed(2) });
+    }
+    catch (error) {
+        next(error);
+    }
+});
+app.get('/reports/employees', authRequired, requireRole(Role.ADMIN), async (req, res, next) => {
+    try {
+        const from = req.query.from ? startOfDay(new Date(String(req.query.from))) : subDays(startOfDay(new Date()), 29);
+        const to = req.query.to ? endOfDay(new Date(String(req.query.to))) : endOfDay(new Date());
+        const [users, salesData, refundsData, voidsData] = await Promise.all([
+            prisma.user.findMany({ select: { id: true, name: true, role: true } }),
+            prisma.sale.findMany({ where: { createdAt: { gte: from, lte: to }, status: SaleStatus.COMPLETED }, select: { userId: true, total: true, discountAmount: true, couponDiscount: true } }),
+            prisma.refund.findMany({ where: { createdAt: { gte: from, lte: to } }, select: { createdById: true, amount: true } }),
+            prisma.sale.findMany({ where: { createdAt: { gte: from, lte: to }, status: SaleStatus.VOIDED }, select: { userId: true } }),
+        ]);
+        const sm = {};
+        for (const u of users)
+            sm[u.id] = { txns: 0, rev: 0, disc: 0, ref: 0, voids: 0 };
+        for (const s of salesData) {
+            if (!sm[s.userId])
+                sm[s.userId] = { txns: 0, rev: 0, disc: 0, ref: 0, voids: 0 };
+            sm[s.userId].txns++;
+            sm[s.userId].rev += toNumber(s.total);
+            sm[s.userId].disc += toNumber(s.discountAmount) + toNumber(s.couponDiscount);
+        }
+        for (const r of refundsData) {
+            if (!sm[r.createdById])
+                sm[r.createdById] = { txns: 0, rev: 0, disc: 0, ref: 0, voids: 0 };
+            sm[r.createdById].ref += toNumber(r.amount);
+        }
+        for (const v of voidsData) {
+            if (!sm[v.userId])
+                sm[v.userId] = { txns: 0, rev: 0, disc: 0, ref: 0, voids: 0 };
+            sm[v.userId].voids++;
+        }
+        const employees = users.map(u => { const s = sm[u.id] || { txns: 0, rev: 0, disc: 0, ref: 0, voids: 0 }; return { id: u.id, name: u.name, role: u.role, transactions: s.txns, revenue: +s.rev.toFixed(2), avgSale: s.txns > 0 ? +(s.rev / s.txns).toFixed(2) : 0, discounts: +s.disc.toFixed(2), refunds: +s.ref.toFixed(2), voids: s.voids }; }).sort((a, b) => b.revenue - a.revenue);
+        res.json({ employees });
+    }
+    catch (error) {
+        next(error);
+    }
+});
+app.get('/reports/customers-report', authRequired, requireRole(Role.ADMIN), async (req, res, next) => {
+    try {
+        const from = req.query.from ? startOfDay(new Date(String(req.query.from))) : subDays(startOfDay(new Date()), 29);
+        const to = req.query.to ? endOfDay(new Date(String(req.query.to))) : endOfDay(new Date());
+        const [allCustomers, salesInRange] = await Promise.all([
+            prisma.customer.findMany({ select: { id: true, name: true, phone: true, loyaltyPoints: true, createdAt: true } }),
+            prisma.sale.findMany({ where: { createdAt: { gte: from, lte: to }, status: SaleStatus.COMPLETED, customerId: { not: null } }, select: { customerId: true, total: true } }),
+        ]);
+        const spend = {}, txns = {};
+        for (const s of salesInRange) {
+            if (!s.customerId)
+                continue;
+            spend[s.customerId] = (spend[s.customerId] || 0) + toNumber(s.total);
+            txns[s.customerId] = (txns[s.customerId] || 0) + 1;
+        }
+        const newCustomers = allCustomers.filter(c => c.createdAt >= from && c.createdAt <= to).length;
+        const topCustomers = allCustomers.filter(c => spend[c.id]).map(c => ({ id: c.id, name: c.name, phone: c.phone ?? null, loyaltyPoints: c.loyaltyPoints, spend: +(spend[c.id] || 0).toFixed(2), transactions: txns[c.id] || 0 })).sort((a, b) => b.spend - a.spend).slice(0, 20);
+        res.json({ total: allCustomers.length, newCustomers, returningCustomers: Object.keys(txns).filter(id => txns[id] > 1).length, activeInRange: Object.keys(spend).length, totalLoyaltyPoints: allCustomers.reduce((s, c) => s + c.loyaltyPoints, 0), topCustomers });
+    }
+    catch (error) {
+        next(error);
+    }
+});
+app.get('/reports/inventory-snapshot', authRequired, requireRole(Role.ADMIN), async (_req, res, next) => {
+    try {
+        const products = await prisma.product.findMany({ include: { category: true }, orderBy: { stockQuantity: 'asc' } });
+        const inventoryValue = products.reduce((s, p) => s + toNumber(p.costPrice) * p.stockQuantity, 0);
+        const retailValue = products.reduce((s, p) => s + toNumber(p.price) * p.stockQuantity, 0);
+        res.json({
+            total: products.length,
+            inStock: products.filter(p => p.stockQuantity > p.lowStockThreshold).length,
+            lowStock: products.filter(p => p.stockQuantity > 0 && p.stockQuantity <= p.lowStockThreshold).length,
+            outOfStock: products.filter(p => p.stockQuantity === 0).length,
+            inventoryValue: +inventoryValue.toFixed(2), retailValue: +retailValue.toFixed(2),
+            products: products.slice(0, 150).map(p => ({ id: p.id, name: p.name, sku: p.sku, category: p.category.name, stock: p.stockQuantity, threshold: p.lowStockThreshold, costPrice: toNumber(p.costPrice), price: toNumber(p.price), value: +(toNumber(p.costPrice) * p.stockQuantity).toFixed(2), status: p.stockQuantity === 0 ? 'OUT' : p.stockQuantity <= p.lowStockThreshold ? 'LOW' : 'OK' })),
+        });
+    }
+    catch (error) {
+        next(error);
+    }
+});
+app.get('/reports/cash-drawers-report', authRequired, requireRole(Role.ADMIN), async (req, res, next) => {
+    try {
+        const from = req.query.from ? startOfDay(new Date(String(req.query.from))) : subDays(startOfDay(new Date()), 29);
+        const to = req.query.to ? endOfDay(new Date(String(req.query.to))) : endOfDay(new Date());
+        const drawers = await prisma.cashDrawer.findMany({ where: { openedAt: { gte: from, lte: to } }, include: { user: true, movements: true }, orderBy: { openedAt: 'desc' } });
+        const result = await Promise.all(drawers.map(async (drawer) => {
+            const end = drawer.closedAt ?? new Date();
+            const sales = await prisma.sale.findMany({ where: { userId: drawer.userId, createdAt: { gte: drawer.openedAt, lte: end }, status: SaleStatus.COMPLETED }, include: { payments: true } });
+            const totalSales = sales.reduce((s, sale) => s + toNumber(sale.total), 0);
+            const cashSales = sales.reduce((s, sale) => s + sale.payments.filter(p => p.method === PaymentMethod.CASH).reduce((ps, p) => ps + toNumber(p.amount), 0), 0);
+            const cardSales = sales.reduce((s, sale) => s + sale.payments.filter(p => p.method === PaymentMethod.CARD).reduce((ps, p) => ps + toNumber(p.amount), 0), 0);
+            const cashIn = drawer.movements.filter(m => m.type === CashMovementType.CASH_IN).reduce((s, m) => s + toNumber(m.amount), 0);
+            const cashOut = drawer.movements.filter(m => m.type === CashMovementType.CASH_OUT).reduce((s, m) => s + toNumber(m.amount), 0);
+            const openingFloat = toNumber(drawer.openingFloat);
+            const expectedCash = openingFloat + cashSales + cashIn - cashOut;
+            const closingFloat = drawer.closingFloat ? toNumber(drawer.closingFloat) : null;
+            return { id: drawer.id, cashier: drawer.user.name, openedAt: drawer.openedAt.toISOString(), closedAt: drawer.closedAt?.toISOString() ?? null, status: drawer.status, openingFloat: +openingFloat.toFixed(2), closingFloat: closingFloat != null ? +closingFloat.toFixed(2) : null, totalSales: +totalSales.toFixed(2), cashSales: +cashSales.toFixed(2), cardSales: +cardSales.toFixed(2), cashIn: +cashIn.toFixed(2), cashOut: +cashOut.toFixed(2), expectedCash: +expectedCash.toFixed(2), difference: closingFloat != null ? +(closingFloat - expectedCash).toFixed(2) : null, salesCount: sales.length };
+        }));
+        res.json({ drawers: result });
+    }
+    catch (error) {
+        next(error);
+    }
+});
+app.get('/reports/tax', authRequired, requireRole(Role.ADMIN), async (req, res, next) => {
+    try {
+        const from = req.query.from ? startOfDay(new Date(String(req.query.from))) : subDays(startOfDay(new Date()), 29);
+        const to = req.query.to ? endOfDay(new Date(String(req.query.to))) : endOfDay(new Date());
+        const sales = await prisma.sale.findMany({ where: { createdAt: { gte: from, lte: to }, status: SaleStatus.COMPLETED }, select: { createdAt: true, taxAmount: true, total: true } });
+        const totalTax = sales.reduce((s, sale) => s + toNumber(sale.taxAmount), 0);
+        const dailyMap = {};
+        for (const s of sales) {
+            const d = format(s.createdAt, 'yyyy-MM-dd');
+            if (!dailyMap[d])
+                dailyMap[d] = { tax: 0, revenue: 0 };
+            dailyMap[d].tax += toNumber(s.taxAmount);
+            dailyMap[d].revenue += toNumber(s.total);
+        }
+        res.json({ totalTax: +totalTax.toFixed(2), transactionCount: sales.length, taxByDay: Object.entries(dailyMap).map(([date, v]) => ({ date, tax: +v.tax.toFixed(2), revenue: +v.revenue.toFixed(2) })) });
+    }
+    catch (error) {
+        next(error);
+    }
+});
+app.get('/reports/z-reports-list', authRequired, requireRole(Role.ADMIN), async (req, res, next) => {
+    try {
+        const from = req.query.from ? startOfDay(new Date(String(req.query.from))) : subDays(startOfDay(new Date()), 90);
+        const to = req.query.to ? endOfDay(new Date(String(req.query.to))) : endOfDay(new Date());
+        const drawers = await prisma.cashDrawer.findMany({ where: { openedAt: { gte: from, lte: to } }, include: { user: true, movements: true }, orderBy: { openedAt: 'desc' }, take: 100 });
+        const result = await Promise.all(drawers.map(async (drawer, index) => {
+            const end = drawer.closedAt ?? new Date();
+            const [sales, refunds, voidCount] = await Promise.all([
+                prisma.sale.findMany({ where: { userId: drawer.userId, createdAt: { gte: drawer.openedAt, lte: end }, status: SaleStatus.COMPLETED }, include: { payments: true } }),
+                prisma.refund.findMany({ where: { createdById: drawer.userId, createdAt: { gte: drawer.openedAt, lte: end } }, select: { amount: true } }),
+                prisma.sale.count({ where: { userId: drawer.userId, updatedAt: { gte: drawer.openedAt, lte: end }, status: SaleStatus.VOIDED } }),
+            ]);
+            const totalSales = sales.reduce((s, sale) => s + toNumber(sale.total), 0);
+            const cashSales = sales.reduce((s, sale) => s + sale.payments.filter(p => p.method === PaymentMethod.CASH).reduce((ps, p) => ps + toNumber(p.amount), 0), 0);
+            const cardSales = sales.reduce((s, sale) => s + sale.payments.filter(p => p.method === PaymentMethod.CARD).reduce((ps, p) => ps + toNumber(p.amount), 0), 0);
+            const totalRefunds = refunds.reduce((s, r) => s + toNumber(r.amount), 0);
+            const cashIn = drawer.movements.filter(m => m.type === CashMovementType.CASH_IN).reduce((s, m) => s + toNumber(m.amount), 0);
+            const cashOut = drawer.movements.filter(m => m.type === CashMovementType.CASH_OUT).reduce((s, m) => s + toNumber(m.amount), 0);
+            const discounts = sales.reduce((s, sale) => s + toNumber(sale.discountAmount) + toNumber(sale.couponDiscount), 0);
+            const openingFloat = toNumber(drawer.openingFloat);
+            const expectedCash = openingFloat + cashSales + cashIn - cashOut - totalRefunds;
+            const closingFloat = drawer.closingFloat ? toNumber(drawer.closingFloat) : null;
+            return { reportNumber: `Z-${String(drawers.length - index).padStart(4, '0')}`, id: drawer.id, cashier: drawer.user.name, shiftStart: drawer.openedAt.toISOString(), shiftEnd: drawer.closedAt?.toISOString() ?? null, status: drawer.status, totalSales: +totalSales.toFixed(2), cashSales: +cashSales.toFixed(2), cardSales: +cardSales.toFixed(2), discounts: +discounts.toFixed(2), totalRefunds: +totalRefunds.toFixed(2), refundsCount: refunds.length, voidsCount: voidCount, cashIn: +cashIn.toFixed(2), cashOut: +cashOut.toFixed(2), openingFloat: +openingFloat.toFixed(2), expectedCash: +expectedCash.toFixed(2), closingFloat: closingFloat != null ? +closingFloat.toFixed(2) : null, difference: closingFloat != null ? +(closingFloat - expectedCash).toFixed(2) : null, salesCount: sales.length };
+        }));
+        res.json({ reports: result });
+    }
+    catch (error) {
+        next(error);
+    }
+});
+// ─────────────────────────────────────────────────────────────────────────────
 app.get('/activity', authRequired, requireRole(Role.ADMIN), async (_req, res, next) => {
     try {
         const activity = await prisma.activityLog.findMany({ include: { user: true }, orderBy: { createdAt: 'desc' }, take: 250 });
@@ -1254,9 +1531,11 @@ app.post('/promotions/match', authRequired, async (req, res, next) => {
         const matches = [];
         for (const promo of promotions) {
             const config = promo.config;
-            const applicableItems = items.filter(item => (promo.productIds.length === 0 && promo.categoryIds.length === 0) ||
-                promo.productIds.includes(item.productId) ||
-                promo.categoryIds.includes(item.categoryId));
+            const productIds = asStringArray(promo.productIds);
+            const categoryIds = asStringArray(promo.categoryIds);
+            const applicableItems = items.filter(item => (productIds.length === 0 && categoryIds.length === 0) ||
+                productIds.includes(item.productId) ||
+                categoryIds.includes(item.categoryId));
             if (applicableItems.length === 0)
                 continue;
             if (promo.type === PromotionType.PERCENT_OFF) {
@@ -1496,6 +1775,67 @@ app.get('/cashier/z-report', authRequired, async (req, res, next) => {
             closingFloat,
             difference: closingFloat != null ? Number((closingFloat - expectedCash).toFixed(2)) : undefined
         });
+    }
+    catch (error) {
+        next(error);
+    }
+});
+const settingsKey = 'system';
+async function readSettings() {
+    const record = await prisma.appSetting.findUnique({ where: { key: settingsKey } });
+    if (!record) {
+        return defaultSystemSettings;
+    }
+    return record.value;
+}
+async function writeSettings(data) {
+    const record = await prisma.appSetting.upsert({
+        where: { key: settingsKey },
+        update: { value: data },
+        create: { key: settingsKey, value: data }
+    });
+    return record.value;
+}
+app.get('/settings', authRequired, requireRole(Role.ADMIN), async (_req, res, next) => {
+    try {
+        res.json({ settings: await readSettings() });
+    }
+    catch (error) {
+        next(error);
+    }
+});
+app.put('/settings', authRequired, requireRole(Role.ADMIN), async (req, res, next) => {
+    try {
+        const current = await readSettings();
+        const incoming = req.body;
+        const merged = {
+            store: { ...current.store, ...(incoming.store ?? {}) },
+            pos: { ...current.pos, ...(incoming.pos ?? {}) },
+            taxes: { ...current.taxes, ...(incoming.taxes ?? {}) },
+            receipt: { ...current.receipt, ...(incoming.receipt ?? {}) },
+            security: { ...current.security, ...(incoming.security ?? {}) }
+        };
+        const settings = await writeSettings(merged);
+        await logActivity(req.user?.id, 'settings.update', 'settings', undefined, settings);
+        res.json({ settings });
+    }
+    catch (error) {
+        next(error);
+    }
+});
+// ────────────────────────────────────────────────
+// MANUAL CASH DRAWER POP
+// ────────────────────────────────────────────────
+app.post('/cashier/drawer/pop', authRequired, async (req, res, next) => {
+    try {
+        const { reason } = req.body;
+        const stationId = req.headers['x-station-id'] ?? 'unknown';
+        // Find active drawer for user (for reference — pop does not require open drawer to allow manager emergency opens)
+        const drawer = await prisma.cashDrawer.findFirst({
+            where: { userId: req.user.id, status: DrawerStatus.OPEN }
+        });
+        await logActivity(req.user?.id, 'drawer.pop', 'cashDrawer', drawer?.id, { reason: reason ?? 'Manual open', stationId, manual: true, userName: req.user?.name });
+        res.json({ ok: true, message: 'Drawer pop command logged' });
     }
     catch (error) {
         next(error);

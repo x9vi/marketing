@@ -5,7 +5,7 @@ import type { AuthUser } from '../api/types.js';
 type AuthContextValue = {
   user: AuthUser | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (username: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
 };
@@ -31,10 +31,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     void refresh();
   }, []);
 
-  const login = async (email: string, password: string) => {
+  const login = async (username: string, password: string) => {
     const result = await apiFetch<{ user: AuthUser }>('/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ email, password })
+      body: JSON.stringify({ username, password })
     });
     setUser(result.user);
   };

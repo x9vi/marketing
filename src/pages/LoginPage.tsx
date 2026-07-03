@@ -1,17 +1,8 @@
 import type { FormEvent } from 'react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.js';
 import { SupermarketBackground } from '../components/SupermarketBackground.js';
-
-const DEMO_ACCOUNTS = {
-  admin: { email: 'admin@store.com', password: 'Password123!', label: 'Store admin' },
-  cashier: { email: 'cashier@store.com', password: 'Password123!', label: 'Checkout' },
-  inventory: { email: 'stock@store.com', password: 'Password123!', label: 'Stock room' },
-  manager: { email: 'admin@store.com', password: 'Password123!', label: 'Floor manager' }
-} as const;
-
-type DemoRole = keyof typeof DEMO_ACCOUNTS;
 
 function StoreLogo() {
   return (
@@ -34,27 +25,23 @@ function StoreLogo() {
 export function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [remember, setRemember] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [activeRole, setActiveRole] = useState<DemoRole | null>(null);
-
-  const fillDemo = (role: DemoRole) => {
-    const account = DEMO_ACCOUNTS[role];
-    setEmail(account.email);
-    setPassword(account.password);
-    setActiveRole(role);
-    setError('');
-  };
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setLoading(true);
     setError('');
     try {
-      await login(email, password);
+      await login(username, password);
+      if (remember) {
+        localStorage.setItem('freshmart.rememberUsername', username);
+      } else {
+        localStorage.removeItem('freshmart.rememberUsername');
+      }
       navigate('/app');
     } catch (loginError) {
       setError(loginError instanceof Error ? loginError.message : 'Login failed');
@@ -63,12 +50,13 @@ export function LoginPage() {
     }
   };
 
-  const roleButtons: Array<{ id: DemoRole; label: string; hint: string }> = [
-    { id: 'cashier', label: 'Cashier', hint: 'POS' },
-    { id: 'inventory', label: 'Stock', hint: 'Inventory' },
-    { id: 'manager', label: 'Manager', hint: 'Reports' },
-    { id: 'admin', label: 'Admin', hint: 'Full access' }
-  ];
+  useEffect(() => {
+    const savedUsername = localStorage.getItem('freshmart.rememberUsername');
+    if (savedUsername) {
+      setUsername(savedUsername);
+      setRemember(true);
+    }
+  }, []);
 
   return (
     <SupermarketBackground variant="login" className="flex min-h-screen items-center justify-center overflow-hidden px-4 py-8">
@@ -79,12 +67,12 @@ export function LoginPage() {
               <StoreLogo />
               <div>
                 <p className="staff-login-card__chain">FreshMart Supermarket</p>
-                <h1 className="staff-login-card__title">Team Member Sign-In</h1>
+                <h1 className="staff-login-card__title">Administrator Sign-In</h1>
               </div>
             </div>
             <div className="staff-login-card__meta">
-              <span className="staff-login-card__badge">Store #1042</span>
-              <span className="staff-login-card__hours">Open today · 7:00 AM – 10:00 PM</span>
+              <span className="staff-login-card__badge">Production installation</span>
+              <span className="staff-login-card__hours">SQLite-backed single-store POS</span>
             </div>
           </header>
 
@@ -96,17 +84,16 @@ export function LoginPage() {
 
             <form onSubmit={submit} className="staff-login-card__form">
               <div className="staff-login-card__field">
-                <label htmlFor="staff-email">Work email</label>
+                <label htmlFor="staff-username">Username</label>
                 <input
-                  id="staff-email"
-                  type="email"
+                  id="staff-username"
+                  type="text"
                   autoComplete="username"
-                  value={email}
+                  value={username}
                   onChange={(e) => {
-                    setEmail(e.target.value);
-                    setActiveRole(null);
+                    setUsername(e.target.value);
                   }}
-                  placeholder="name@freshmart.store"
+                  placeholder="admin"
                   required
                 />
               </div>
@@ -118,11 +105,8 @@ export function LoginPage() {
                   type="password"
                   autoComplete="current-password"
                   value={password}
-                  onChange={(e) => {
-                    setPassword(e.target.value);
-                    setActiveRole(null);
-                  }}
-                  placeholder="Enter your staff password"
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Password"
                   required
                 />
               </div>
@@ -130,7 +114,7 @@ export function LoginPage() {
               <div className="staff-login-card__row">
                 <label className="staff-login-card__remember">
                   <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
-                  <span>Keep me signed in on this device</span>
+                  <span>Remember me</span>
                 </label>
                 <button type="button" className="staff-login-card__link">
                   Forgot password?
@@ -140,37 +124,13 @@ export function LoginPage() {
               {error ? <div className="staff-login-card__error">{error}</div> : null}
 
               <button type="submit" disabled={loading} className="staff-login-card__submit">
-                {loading ? 'Opening store system…' : 'Enter store system'}
+                {loading ? 'Signing in…' : 'Login'}
               </button>
             </form>
-
-            <div className="staff-login-card__divider">
-              <span>Demo quick access</span>
-            </div>
-
-            <div className="staff-login-card__roles">
-              {roleButtons.map((role) => (
-                <button
-                  key={role.id}
-                  type="button"
-                  onClick={() => fillDemo(role.id)}
-                  className={`staff-login-card__role ${activeRole === role.id ? 'staff-login-card__role--active' : ''}`}
-                >
-                  <span className="staff-login-card__role-label">{role.label}</span>
-                  <span className="staff-login-card__role-hint">{role.hint}</span>
-                </button>
-              ))}
-            </div>
-
-            {activeRole ? (
-              <p className="staff-login-card__demo-hint">
-                Demo filled: <strong>{DEMO_ACCOUNTS[activeRole].email}</strong> — tap Enter store system
-              </p>
-            ) : null}
           </div>
 
           <footer className="staff-login-card__footer">
-            <p>© {new Date().getFullYear()} FreshMart · Internal use only</p>
+            <p>© {new Date().getFullYear()} FreshMart</p>
           </footer>
         </article>
       </div>

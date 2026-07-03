@@ -9,7 +9,8 @@ export type CashMovementType = 'CASH_IN' | 'CASH_OUT' | 'SALE' | 'REFUND';
 
 export type AuthUser = {
   id: string;
-  email: string;
+  username: string;
+  email?: string | null;
   name: string;
   role: Role;
   active?: boolean;

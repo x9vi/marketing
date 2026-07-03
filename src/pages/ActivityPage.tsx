@@ -6,12 +6,12 @@ import { formatDate } from '../lib/format.js';
 
 export function ActivityPage() {
   const [activity, setActivity] = useState<ActivityLog[]>([]);
-  const [sessions, setSessions] = useState<Array<{ id: string; startedAt: string; user: { name: string; email: string; role: string } }>>([]);
+  const [sessions, setSessions] = useState<Array<{ id: string; startedAt: string; user: { name: string; username: string; role: string } }>>([]);
 
   useEffect(() => {
     void Promise.all([
       apiFetch<{ activity: ActivityLog[] }>('/activity'),
-      apiFetch<{ sessions: Array<{ id: string; startedAt: string; user: { name: string; email: string; role: string } }> }>('/cashier/sessions')
+      apiFetch<{ sessions: Array<{ id: string; startedAt: string; user: { name: string; username: string; role: string } }> }>('/cashier/sessions')
     ])
       .then(([activityResult, sessionResult]) => {
         setActivity(activityResult.activity);
@@ -32,7 +32,7 @@ export function ActivityPage() {
           {sessions.map((session) => (
             <div key={session.id} className="rounded-2xl border border-white/10 bg-black/20 p-4">
               <p className="font-medium text-white">{session.user.name}</p>
-              <p className="text-sm text-slate-400">{session.user.email}</p>
+              <p className="text-sm text-slate-400">{session.user.username}</p>
               <p className="mt-2 text-sm text-gold-300">{session.user.role}</p>
               <p className="mt-1 text-xs text-slate-500">Started {formatDate(session.startedAt)}</p>
             </div>

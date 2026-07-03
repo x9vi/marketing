@@ -7,5 +7,9 @@ export const env = {
     jwtSecret: process.env.JWT_SECRET ?? 'change-me',
     jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? '7d',
     currencyCode: process.env.CURRENCY_CODE ?? 'IQD',
-    uploadsDir: process.env.UPLOADS_DIR ?? 'server/uploads'
+    uploadsDir: process.env.UPLOADS_DIR ?? 'server/uploads',
+    databaseUrl: process.env.DATABASE_URL ?? 'file:./prisma/freshmart.db',
+    initialAdminUsername: process.env.INITIAL_ADMIN_USERNAME ?? 'admin',
+    initialAdminPassword: process.env.INITIAL_ADMIN_PASSWORD ?? 'ChangeMeNow!123',
+    initialAdminName: process.env.INITIAL_ADMIN_NAME ?? 'Administrator'
 };

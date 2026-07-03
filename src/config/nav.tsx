@@ -10,7 +10,8 @@ export type NavIconName =
   | 'customers'
   | 'reports'
   | 'employees'
-  | 'activity';
+  | 'activity'
+  | 'settings';
 
 export type NavItem = {
   to: string;
@@ -111,9 +112,21 @@ export const navGroups: NavGroup[] = [
       },
       {
         to: '/app/employees',
-        label: 'Team & roles',
-        description: 'Staff accounts & access',
+        label: 'Administrator',
+        description: 'Single-store account',
         icon: 'employees',
+        roles: ['ADMIN']
+      }
+    ]
+  },
+  {
+    title: 'System',
+    items: [
+      {
+        to: '/app/settings',
+        label: 'Settings',
+        description: 'Hardware, printer & drawer',
+        icon: 'settings',
         roles: ['ADMIN']
       }
     ]

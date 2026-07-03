@@ -13,6 +13,7 @@ import { EmployeesPage } from './pages/EmployeesPage.js';
 import { ActivityPage } from './pages/ActivityPage.js';
 import { SuppliersPage } from './pages/SuppliersPage.js';
 import { SalesPage } from './pages/SalesPage.js';
+import { SettingsPage } from './pages/SettingsPage.js';
 import type { Role } from './api/types.js';
 
 function AppRoutes() {
@@ -39,6 +40,7 @@ function AppRoutes() {
             <Route path="reports" element={<ReportsPage />} />
             <Route path="employees" element={<EmployeesPage />} />
             <Route path="activity" element={<ActivityPage />} />
+            <Route path="settings" element={<SettingsPage />} />
           </Route>
           <Route path="*" element={<Navigate to={home} replace />} />
         </Route>

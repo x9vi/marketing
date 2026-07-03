@@ -1,0 +1,17 @@
+{
+  "receiptPrinter": {
+    "enabled": false,
+    "interfaceType": "browser",
+    "devicePath": "",
+    "printerName": ""
+  },
+  "cashDrawer": {
+    "enabled": false,
+    "triggerViaDrawerKick": true,
+    "drawerPort": ""
+  },
+  "station": {
+    "id": "POS-1",
+    "name": "Main Register"
+  }
+}

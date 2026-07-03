@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zero Neon Logo</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: linear-gradient(135deg, #0a0e1a 0%, #1a1f3a 100%);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden;
+        }
+
+        .container {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 30px;
+        }
+
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap');
+
+        .neon-text {
+            font-family: 'Orbitron', monospace;
+            font-size: 280px;
+            font-weight: 900;
+            letter-spacing: 15px;
+            text-transform: uppercase;
+            position: relative;
+            z-index: 1;
+            background: linear-gradient(90deg, #00ffff, #0088ff, #00ffff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            filter: drop-shadow(0 0 30px rgba(0, 255, 255, 0.8))
+                    drop-shadow(0 0 60px rgba(0, 136, 255, 0.5));
+            animation: mega-glow 3s ease-in-out infinite, cyberpulse 2.5s ease-in-out infinite;
+            text-stroke: 2px rgba(0, 255, 255, 0.3);
+            -webkit-text-stroke: 2px rgba(0, 255, 255, 0.3);
+        }
+
+        .neon-text::before {
+            content: 'zero';
+            position: absolute;
+            left: 0;
+            top: 0;
+            z-index: -1;
+            background: linear-gradient(90deg, #ff00ff, #00ffff, #ffff00);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            filter: blur(20px) drop-shadow(0 0 60px rgba(255, 0, 255, 0.6));
+            animation: color-shift 4s ease-in-out infinite;
+        }
+
+        .neon-text::after {
+            content: 'zero';
+            position: absolute;
+            left: 0;
+            top: 0;
+            z-index: -1;
+            color: #00ffff;
+            filter: blur(40px) drop-shadow(0 0 80px rgba(0, 255, 255, 0.7));
+            animation: mega-glow 3s ease-in-out infinite;
+        }
+
+        @keyframes mega-glow {
+            0%, 100% {
+                text-shadow: 
+                    0 0 10px rgba(0, 255, 255, 0.8),
+                    0 0 20px rgba(0, 255, 255, 0.6),
+                    0 0 40px rgba(0, 136, 255, 0.4),
+                    0 0 80px rgba(0, 255, 255, 0.3),
+                    0 0 100px rgba(255, 0, 255, 0.2),
+                    0 0 150px rgba(0, 136, 255, 0.1);
+                filter: drop-shadow(0 0 30px rgba(0, 255, 255, 0.8))
+                        drop-shadow(0 0 60px rgba(0, 136, 255, 0.5))
+                        drop-shadow(0 0 90px rgba(255, 0, 255, 0.2));
+            }
+            50% {
+                text-shadow: 
+                    0 0 20px rgba(0, 255, 255, 1),
+                    0 0 40px rgba(0, 255, 255, 0.8),
+                    0 0 60px rgba(0, 136, 255, 0.6),
+                    0 0 100px rgba(0, 255, 255, 0.4),
+                    0 0 140px rgba(255, 0, 255, 0.3),
+                    0 0 180px rgba(0, 136, 255, 0.2);
+                filter: drop-shadow(0 0 50px rgba(0, 255, 255, 1))
+                        drop-shadow(0 0 80px rgba(0, 136, 255, 0.7))
+                        drop-shadow(0 0 120px rgba(255, 0, 255, 0.3));
+            }
+        }
+
+        @keyframes cyberpulse {
+            0%, 100% {
+                transform: scaleX(1) scaleY(1);
+                letter-spacing: 15px;
+            }
+            50% {
+                transform: scaleX(1.05) scaleY(0.95);
+                letter-spacing: 20px;
+            }
+        }
+
+        @keyframes color-shift {
+            0% {
+                filter: blur(20px) drop-shadow(0 0 60px rgba(255, 0, 255, 0.6));
+            }
+            50% {
+                filter: blur(20px) drop-shadow(0 0 60px rgba(0, 255, 255, 0.6));
+            }
+            100% {
+                filter: blur(20px) drop-shadow(0 0 60px rgba(255, 0, 255, 0.6));
+            }
+        }
+
+        @keyframes flicker {
+            0%, 18%, 22%, 25%, 54%, 56%, 100% {
+                opacity: 1;
+            }
+            20%, 24%, 55% {
+                opacity: 0.9;
+            }
+        }
+
+        .glow-bg {
+            position: absolute;
+            width: 400px;
+            height: 400px;
+            background: radial-gradient(circle, rgba(0, 255, 255, 0.1) 0%, rgba(0, 255, 255, 0) 70%);
+            border-radius: 50%;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            animation: pulse 3s ease-in-out infinite;
+            z-index: 0;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                transform: translate(-50%, -50%) scale(1);
+                opacity: 0.5;
+            }
+            50% {
+                transform: translate(-50%, -50%) scale(1.2);
+                opacity: 0.8;
+            }
+        }
+
+        .title {
+            color: #00ffff;
+            font-size: 24px;
+            text-align: center;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            margin-top: 40px;
+            opacity: 0.8;
+        }
+
+        .particles {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .particle {
+            position: absolute;
+            width: 2px;
+            height: 2px;
+            background: #00ffff;
+            border-radius: 50%;
+            animation: float 20s infinite linear;
+            opacity: 0.5;
+        }
+    </style>
+</head>
+<body>
+    <div class="particles" id="particles"></div>
+    
+    <div class="container">
+        <div class="glow-bg"></div>
+        <div class="neon-text">zero</div>
+        <div class="title">✨ Neon Studio ✨</div>
+    </div>
+
+    <script>
+        // Create floating particles
+        const particlesContainer = document.getElementById('particles');
+        function createParticle() {
+            const particle = document.createElement('div');
+            particle.className = 'particle';
+            particle.style.left = Math.random() * 100 + '%';
+            particle.style.top = Math.random() * 100 + '%';
+            particle.style.setProperty('--duration', (Math.random() * 10 + 20) + 's');
+            particle.style.animation = `float ${Math.random() * 10 + 20}s infinite linear`;
+            
+            particlesContainer.appendChild(particle);
+            
+            setTimeout(() => particle.remove(), 30000);
+        }
+
+        // Create particles every 2 seconds
+        setInterval(createParticle, 2000);
+        for (let i = 0; i < 10; i++) {
+            createParticle();
+        }
+    </script>
+</body>
+</html>
