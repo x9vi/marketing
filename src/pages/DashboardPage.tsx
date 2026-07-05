@@ -1,22 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import { apiFetch } from '../api/client.js';
 import type { DashboardSummary } from '../api/types.js';
 import { useAuth } from '../context/AuthContext.js';
-import { StatCard } from '../components/StatCard.js';
-import { SectionCard } from '../components/SectionCard.js';
-import { PageHeader } from '../components/PageHeader.js';
-import { QuickActionCard } from '../components/QuickActionCard.js';
 import { formatCurrency } from '../lib/format.js';
 import { defaultAppPath } from '../config/nav.js';
-
-function aggregateRevenue(entries: DashboardSummary['revenueLast7Days']) {
-  const map = new Map<string, number>();
-  for (const entry of entries) {
-    map.set(entry.date, (map.get(entry.date) ?? 0) + entry.total);
-  }
-  return Array.from(map.entries()).map(([date, total]) => ({ date, total }));
-}
+import './DashboardPage.css';
 
 export function DashboardPage() {
   const { user } = useAuth();
@@ -32,148 +21,230 @@ export function DashboardPage() {
       .finally(() => setLoading(false));
   }, [user?.role]);
 
-  const chartData = useMemo(() => (summary ? aggregateRevenue(summary.revenueLast7Days) : []), [summary]);
-  const maxRevenue = Math.max(...chartData.map((e) => e.total), 1);
-
   if (user?.role !== 'ADMIN') {
     return <Navigate to={defaultAppPath(user?.role ?? 'CASHIER')} replace />;
   }
 
   if (loading) {
     return (
-      <div className="admin-panel p-8 text-center text-slate-300">
+      <div className="flex h-screen items-center justify-center text-slate-300 bg-[#0a0f1c]">
         <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-2 border-mint-400 border-t-transparent" />
-        Loading command center…
       </div>
     );
   }
 
   if (!summary) {
     return (
-      <div className="admin-panel p-8 text-center text-red-300">
+      <div className="flex h-screen items-center justify-center text-red-400 bg-[#0a0f1c]">
         Could not load dashboard. Check your connection and try again.
       </div>
     );
   }
 
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Good morning';
+    if (hour < 18) return 'Good afternoon';
+    return 'Good evening';
+  };
+
+  const revenueStr = formatCurrency(summary.todaySales.revenue);
+  const receiptsCount = summary.todaySales.count;
+  const lowStockCount = summary.lowStockProducts.length;
+
   return (
-    <div className="space-y-6">
-      <PageHeader
-        eyebrow="Admin command center"
-        title="Store performance at a glance"
-        description="Everything you need to run FreshMart — sales, stock, team, and live checkout."
-        action={
-          <Link to="/app/reports" className="admin-btn admin-btn--primary">
-            View reports
-          </Link>
-        }
-      />
-
-      {summary.lowStockProducts.length > 0 ? (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-400/30 bg-amber-400/10 px-4 py-3">
-          <p className="text-sm text-amber-50">
-            <strong>{summary.lowStockProducts.length}</strong> products need restocking
-          </p>
-          <Link to="/app/inventory" className="text-sm font-semibold text-amber-200 hover:text-white">
-            Go to inventory →
-          </Link>
+    <div className="command-center">
+      <header className="topbar">
+        <Link to="/app" className="logo">
+          <div className="mark">🛒</div>
+          <div>FreshMart<small>COMMAND CENTER</small></div>
+        </Link>
+        <div className="searchbar">
+          <span>🔍</span>
+          <input placeholder="Search modules, products, receipts…" />
         </div>
-      ) : null}
-
-      <div className="admin-stat-grid">
-        <StatCard label="Today's receipts" value={String(summary.todaySales.count)} hint={formatCurrency(summary.todaySales.revenue)} accent="Sales" trend="up" />
-        <StatCard label="Low stock alerts" value={String(summary.lowStockProducts.length)} hint="Below reorder threshold" accent="Alert" trend={summary.lowStockProducts.length ? 'down' : undefined} />
-        <StatCard label="Active checkouts" value={String(summary.activeCashiers)} hint="Cashiers signed in now" accent="Live" />
-        <StatCard label="Top sellers today" value={String(summary.topProducts.length)} hint="By units sold" accent="Today" />
-      </div>
-
-      <SectionCard title="Quick actions" subtitle="Jump to the tools you use most">
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <QuickActionCard to="/app/pos" label="Open POS" description="Start a sale" icon="pos" accent="gold" />
-          <QuickActionCard to="/app/products" label="Products" description="Edit catalog & prices" icon="products" accent="mint" />
-          <QuickActionCard to="/app/inventory" label="Stock in" description="Receive deliveries" icon="inventory" accent="sky" />
-          <QuickActionCard to="/app/employees" label="Team" description="Manage staff access" icon="employees" accent="amber" />
-          <QuickActionCard to="/app/sales" label="Sales" description="Browse receipts" icon="sales" accent="sky" />
-          <QuickActionCard to="/app/suppliers" label="Suppliers" description="Vendor contacts" icon="suppliers" accent="mint" />
-          <QuickActionCard to="/app/customers" label="Customers" description="Loyalty & history" icon="customers" accent="gold" />
-          <QuickActionCard to="/app/activity" label="Activity" description="Audit & sessions" icon="activity" accent="amber" />
+        <div className="top-right">
+          <Link to="/app/pos" className="cta">Open POS</Link>
+          <div className="avatar">{user?.name?.charAt(0) ?? 'H'}</div>
         </div>
-      </SectionCard>
+      </header>
 
-      <div className="grid gap-6 xl:grid-cols-[1.35fr_0.65fr]">
-        <SectionCard title="Revenue · last 7 days" subtitle="Daily totals from completed sales">
-          {chartData.length === 0 ? (
-            <p className="text-sm text-slate-400">No sales in the last week yet.</p>
-          ) : (
-            <div className="grid grid-cols-7 items-end gap-2 sm:gap-3">
-              {chartData.map((entry) => (
-                <div key={entry.date} className="flex min-h-[160px] flex-col items-center justify-end gap-2">
-                  <div className="flex w-full items-end justify-center rounded-xl bg-black/20 p-1.5 sm:p-2">
-                    <div
-                      className="w-full max-w-[48px] rounded-xl bg-gradient-to-t from-gold-500 to-mint-400 transition-all duration-500"
-                      style={{ height: `${Math.max((entry.total / maxRevenue) * 140, 6)}px` }}
-                    />
-                  </div>
-                  <span className="text-[10px] sm:text-xs text-slate-400">{entry.date}</span>
-                  <span className="text-[10px] text-slate-500">{formatCurrency(entry.total)}</span>
-                </div>
-              ))}
+      <main className="wrap">
+        {/* GREETING + LIVE STATS */}
+        <div className="hero">
+          <div>
+            <h1>{getGreeting()}, {user?.name?.split(' ')[0] ?? 'Admin'} 👋</h1>
+            <p>Here's what's happening in your store today.</p>
+          </div>
+          <div className="hero-stats">
+            <div className="mini">
+              <div className="k">Today's revenue</div>
+              <div className="v g">{revenueStr}</div>
             </div>
-          )}
-        </SectionCard>
-
-        <SectionCard title="Top products today" subtitle="Best sellers by quantity">
-          <div className="space-y-2">
-            {summary.topProducts.length === 0 ? (
-              <p className="text-sm text-slate-400">No sales recorded today.</p>
-            ) : (
-              summary.topProducts.map((item, index) => (
-                <div key={item.productId} className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-black/20 px-3 py-2.5">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg bg-gold-500/20 text-xs font-bold text-gold-300">
-                      {index + 1}
-                    </span>
-                    <div className="min-w-0">
-                      <p className="truncate font-medium text-white">{item.name}</p>
-                      <p className="text-xs text-slate-500">SKU {item.sku}</p>
-                    </div>
-                  </div>
-                  <div className="text-right text-sm">
-                    <p className="font-medium text-white">{item.quantity} sold</p>
-                    <p className="text-xs text-slate-400">{formatCurrency(item.revenue)}</p>
-                  </div>
-                </div>
-              ))
-            )}
+            <div className="mini">
+              <div className="k">Receipts</div>
+              <div className="v">{receiptsCount}</div>
+            </div>
+            <div className="mini">
+              <div className="k">Low stock</div>
+              <div className={`v ${lowStockCount > 0 ? 'r' : ''}`}>{lowStockCount}</div>
+            </div>
           </div>
-        </SectionCard>
-      </div>
+        </div>
 
-      <SectionCard
-        title="Low stock alerts"
-        subtitle="Reorder before shelves run empty"
-        action={
-          <Link to="/app/inventory" className="admin-btn admin-btn--ghost text-sm">
-            Manage stock
-          </Link>
-        }
-      >
-        {summary.lowStockProducts.length === 0 ? (
-          <p className="text-sm text-mint-300">All products are above their thresholds.</p>
-        ) : (
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {summary.lowStockProducts.map((product) => (
-              <div key={product.id} className="rounded-xl border border-amber-400/25 bg-amber-400/10 p-4">
-                <p className="font-semibold text-amber-50">{product.name}</p>
-                <p className="mt-0.5 text-sm text-amber-100/70">{product.category?.name}</p>
-                <p className="mt-2 text-sm text-amber-100">
-                  <span className="font-bold">{product.stockQuantity}</span> in stock · threshold {product.lowStockThreshold}
-                </p>
-              </div>
-            ))}
+        {/* SALES & CHECKOUT */}
+        <section className="section">
+          <div className="section-title">
+            <h2>Sales & Checkout</h2>
+            <div className="line"></div>
           </div>
-        )}
-      </SectionCard>
+          <div className="grid">
+            <Link to="/app/pos" className="tile c-green">
+              <div className="beam"></div>
+              <div className="ic">🖥️</div>
+              <div><div className="name">Point of Sale</div><div className="desc">Open register</div></div>
+            </Link>
+            <Link to="/app/sales" className="tile c-blue">
+              <div className="beam"></div>
+              <div className="ic">🧾</div>
+              <div><div className="name">Sales History</div><div className="desc">Receipts & PDFs</div></div>
+            </Link>
+            <Link to="/app/sales" className="tile c-green">
+              <div className="beam"></div>
+              <div className="ic">↩️</div>
+              <div><div className="name">Returns & Refunds</div><div className="desc">Process returns</div></div>
+            </Link>
+            <Link to="/app/pos" className="tile c-amber">
+              <div className="beam"></div>
+              <span className="badge hot">3</span>
+              <div className="ic">⏸️</div>
+              <div><div className="name">Held Orders</div><div className="desc">Parked carts</div></div>
+            </Link>
+            <Link to="/app/settings" className="tile c-purple">
+              <div className="beam"></div>
+              <div className="ic">💳</div>
+              <div><div className="name">Payments</div><div className="desc">Methods & terminals</div></div>
+            </Link>
+            <Link to="/app/products" className="tile c-blue">
+              <div className="beam"></div>
+              <div className="ic">🎟️</div>
+              <div><div className="name">Discounts</div><div className="desc">Coupons & promos</div></div>
+            </Link>
+          </div>
+        </section>
+
+        {/* STOCK & CATALOG */}
+        <section className="section">
+          <div className="section-title">
+            <h2>Stock & Catalog</h2>
+            <div className="line"></div>
+          </div>
+          <div className="grid">
+            <Link to="/app/products" className="tile c-amber">
+              <div className="beam"></div>
+              <div className="ic">📦</div>
+              <div><div className="name">Products</div><div className="desc">SKUs & pricing</div></div>
+            </Link>
+            <Link to="/app/inventory" className="tile c-red">
+              <div className="beam"></div>
+              {lowStockCount > 0 && <span className="badge hot">{lowStockCount}</span>}
+              <div className="ic">⚠️</div>
+              <div><div className="name">Low Stock</div><div className="desc">Reorder alerts</div></div>
+            </Link>
+            <Link to="/app/products" className="tile c-green">
+              <div className="beam"></div>
+              <div className="ic">🏷️</div>
+              <div><div className="name">Categories</div><div className="desc">Organize catalog</div></div>
+            </Link>
+            <Link to="/app/suppliers" className="tile c-blue">
+              <div className="beam"></div>
+              <div className="ic">🚚</div>
+              <div><div className="name">Suppliers</div><div className="desc">Vendors & POs</div></div>
+            </Link>
+            <Link to="/app/inventory" className="tile c-purple">
+              <div className="beam"></div>
+              <div className="ic">📥</div>
+              <div><div className="name">Stock Intake</div><div className="desc">Receive goods</div></div>
+            </Link>
+            <Link to="/app/products" className="tile c-amber">
+              <div className="beam"></div>
+              <div className="ic">🔖</div>
+              <div><div className="name">Barcodes & Labels</div><div className="desc">Print tags</div></div>
+            </Link>
+          </div>
+        </section>
+
+        {/* PEOPLE */}
+        <section className="section">
+          <div className="section-title">
+            <h2>People</h2>
+            <div className="line"></div>
+          </div>
+          <div className="grid">
+            <Link to="/app/customers" className="tile c-blue">
+              <div className="beam"></div>
+              <div className="ic">👥</div>
+              <div><div className="name">Customers</div><div className="desc">Loyalty & history</div></div>
+            </Link>
+            <Link to="/app/employees" className="tile c-green">
+              <div className="beam"></div>
+              <div className="ic">🧑‍💼</div>
+              <div><div className="name">Cashiers</div><div className="desc">Staff & shifts</div></div>
+            </Link>
+            <Link to="/app/employees" className="tile c-purple">
+              <div className="beam"></div>
+              <div className="ic">🔐</div>
+              <div><div className="name">Roles & Access</div><div className="desc">Permissions</div></div>
+            </Link>
+            <Link to="/app/customers" className="tile c-pink">
+              <div className="beam"></div>
+              <span className="badge new">NEW</span>
+              <div className="ic">🎁</div>
+              <div><div className="name">Loyalty Program</div><div className="desc">Points & rewards</div></div>
+            </Link>
+          </div>
+        </section>
+
+        {/* REPORTS & SETTINGS */}
+        <section className="section">
+          <div className="section-title">
+            <h2>Reports & Settings</h2>
+            <div className="line"></div>
+          </div>
+          <div className="grid">
+            <Link to="/app/reports" className="tile c-green">
+              <div className="beam"></div>
+              <div className="ic">📊</div>
+              <div><div className="name">Sales Reports</div><div className="desc">Daily & monthly</div></div>
+            </Link>
+            <Link to="/app/activity" className="tile c-amber">
+              <div className="beam"></div>
+              <div className="ic">💰</div>
+              <div><div className="name">Cash Drawer</div><div className="desc">Open/close counts</div></div>
+            </Link>
+            <Link to="/app/reports" className="tile c-blue">
+              <div className="beam"></div>
+              <div className="ic">📈</div>
+              <div><div className="name">Profit & Loss</div><div className="desc">Financial overview</div></div>
+            </Link>
+            <Link to="/app/settings" className="tile c-red">
+              <div className="beam"></div>
+              <div className="ic">🧮</div>
+              <div><div className="name">Tax & VAT</div><div className="desc">Rates & filing</div></div>
+            </Link>
+            <Link to="/app/settings" className="tile c-purple">
+              <div className="beam"></div>
+              <div className="ic">⚙️</div>
+              <div><div className="name">Settings</div><div className="desc">Store config</div></div>
+            </Link>
+            <Link to="/app/settings" className="tile c-blue">
+              <div className="beam"></div>
+              <div className="ic">☁️</div>
+              <div><div className="name">Backup & Restore</div><div className="desc">Cloud sync</div></div>
+            </Link>
+          </div>
+        </section>
+      </main>
     </div>
   );
 }

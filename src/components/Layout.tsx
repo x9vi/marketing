@@ -23,10 +23,11 @@ export function Layout() {
     'FreshMart';
 
   const isPos = location.pathname === '/app/pos';
+  const isDashboard = location.pathname === '/app' || location.pathname === '/app/';
 
-  if (isPos) {
+  if (isPos || isDashboard) {
     return (
-      <SupermarketBackground variant="app" className="min-h-screen text-slate-100 flex flex-col overflow-hidden p-2">
+      <SupermarketBackground variant="app" className="min-h-screen text-slate-100 flex flex-col overflow-hidden">
         <main className="flex-1 flex flex-col overflow-hidden">
           <Outlet />
         </main>
