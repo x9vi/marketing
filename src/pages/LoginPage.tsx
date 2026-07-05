@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.js';
 import { SupermarketBackground } from '../components/SupermarketBackground.js';
 import { AnimatedBackground } from '../components/AnimatedBackground.js';
+import WelcomeReveal from '../components/WelcomeReveal.js';
 
 export function LoginPage() {
   const { login } = useAuth();
@@ -33,10 +34,7 @@ export function LoginPage() {
       <AnimatedBackground />
       <div className="w-full max-w-[440px] relative z-10">
         <article className="card">
-          <header className="card-header">
-            <div className="logo cart">🛒</div>
-            <div className="welcome">Welcome</div>
-          </header>
+          <WelcomeReveal />
 
           <form onSubmit={submit} className="card-body">
             <div className="field">
