@@ -24,9 +24,22 @@
   --card-bg: #ffffff;
   --text: #0f172a;
   --muted: #6b7280;
-  --primary: #111827; /* dark primary button */
+  
+  /* New Theme Variables */
+  --primary: #1E9E52;
+  --primary-dark: #0F7A3D;
+  --primary-deep: #0B5E2E;
+  --bg-panel: #F5F8F5;
+  --bg-tint: #E8F3EC;
+  --text-heading: #1A3A2A;
+  --text-body: #4A5A50;
+  --text-muted: #9AA8A0;
+  --accent-yellow: #E6B93A;
+  --accent-lime: #8BC34A;
+  --accent-red: #D9534F;
+  --border: #DCE5DE;
+
   --primary-contrast: #ffffff;
-  --border: rgba(15,23,42,0.06);
   --radius: 12px;
   color-scheme: light;
 }
