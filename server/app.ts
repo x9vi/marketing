@@ -121,16 +121,32 @@ app.get('/health', (_req, res) => {
   res.json({ ok: true, currency: env.currencyCode });
 });
 
+app.get('/auth/store-info', async (_req, res) => {
+  try {
+    const settings = await readSettings();
+    res.json({
+      name: settings.store.name || 'FreshMart',
+      logoUrl: settings.store.logoUrl || ''
+    });
+  } catch (error) {
+    console.error('Store info database connection error:', error);
+    res.status(500).json({ message: 'Unable to connect to database' });
+  }
+});
+
 app.post('/auth/login', async (req, res, next) => {
   try {
     const { username, password } = req.body as { username?: string; password?: string };
-    if (!username || !password) {
-      return res.status(400).json({ message: 'Username and password are required' });
+    if (!username) {
+      return res.status(400).json({ message: 'Username is required' });
+    }
+    if (!password) {
+      return res.status(400).json({ message: 'Password is required' });
     }
 
     const result = await authenticate(username, password);
     if (!result) {
-      return res.status(401).json({ message: 'Invalid credentials' });
+      return res.status(401).json({ message: 'Invalid username or password' });
     }
 
     res.cookie('auth_token', result.token, {
@@ -147,9 +163,11 @@ app.post('/auth/login', async (req, res, next) => {
     await logActivity(result.user.id, 'auth.login', 'user', result.user.id, { username: result.user.username });
     res.json({ user: sendAuthUser(result.authUser) });
   } catch (error) {
-    next(error);
+    console.error('Authentication database connection error:', error);
+    res.status(500).json({ message: 'Unable to connect to database' });
   }
 });
+
 
 app.post('/auth/logout', authRequired, async (req: AuthedRequest, res, next) => {
   try {
@@ -1813,11 +1831,94 @@ app.put('/settings', authRequired, requireRole(Role.ADMIN), async (req: AuthedRe
       pos: { ...current.pos, ...(incoming.pos ?? {}) },
       taxes: { ...current.taxes, ...(incoming.taxes ?? {}) },
       receipt: { ...current.receipt, ...(incoming.receipt ?? {}) },
-      security: { ...current.security, ...(incoming.security ?? {}) }
+      security: { ...current.security, ...(incoming.security ?? {}) },
+      hardware: { ...current.hardware, ...(incoming.hardware ?? {}) },
+      inventory: { ...current.inventory, ...(incoming.inventory ?? {}) },
+      backup: { ...current.backup, ...(incoming.backup ?? {}) },
+      notifications: { ...current.notifications, ...(incoming.notifications ?? {}) },
+      appearance: { ...current.appearance, ...(incoming.appearance ?? {}) }
     };
     const settings = await writeSettings(merged);
     await logActivity(req.user?.id, 'settings.update', 'settings', undefined, settings as unknown as Prisma.InputJsonValue);
     res.json({ settings });
+  } catch (error) { next(error); }
+});
+
+app.post('/settings/logo', authRequired, requireRole(Role.ADMIN), upload.single('logo'), (req, res, next) => {
+  try {
+    if (!req.file) {
+      res.status(400).json({ message: 'No logo file provided' });
+      return;
+    }
+    const logoUrl = `/uploads/${req.file.filename}`;
+    res.json({ logoUrl });
+  } catch (error) { next(error); }
+});
+
+app.get('/settings/db-info', authRequired, requireRole(Role.ADMIN), async (_req, res, next) => {
+  try {
+    const products = await prisma.product.count();
+    const sales = await prisma.sale.count();
+    const customers = await prisma.customer.count();
+    const suppliers = await prisma.supplier.count();
+    const transactions = await prisma.cashMovement.count();
+    
+    let dbSize = 0;
+    let dbPath = 'Unknown';
+    try {
+      const p1 = path.resolve(process.cwd(), 'prisma/freshmart.db');
+      const p2 = path.resolve(process.cwd(), 'prisma/prisma/freshmart.db');
+      if (fs.existsSync(p1)) {
+        dbSize = fs.statSync(p1).size;
+        dbPath = p1;
+      } else if (fs.existsSync(p2)) {
+        dbSize = fs.statSync(p2).size;
+        dbPath = p2;
+      }
+    } catch {}
+
+    res.json({
+      name: 'SQLite (freshmart.db)',
+      location: dbPath,
+      sizeBytes: dbSize,
+      products,
+      sales,
+      customers,
+      suppliers,
+      transactions
+    });
+  } catch (error) { next(error); }
+});
+
+app.post('/settings/db-optimize', authRequired, requireRole(Role.ADMIN), async (_req, res, next) => {
+  try {
+    await prisma.$executeRawUnsafe('PRAGMA optimize;');
+    await prisma.$executeRawUnsafe('PRAGMA wal_checkpoint(TRUNCATE);');
+    res.json({ message: 'Database optimized successfully' });
+  } catch (error) { next(error); }
+});
+
+app.post('/settings/db-vacuum', authRequired, requireRole(Role.ADMIN), async (_req, res, next) => {
+  try {
+    await prisma.$executeRawUnsafe('VACUUM;');
+    res.json({ message: 'Database vacuumed successfully' });
+  } catch (error) { next(error); }
+});
+
+app.get('/settings/db-backup', authRequired, requireRole(Role.ADMIN), async (_req, res, next) => {
+  try {
+    let dbPath = '';
+    const p1 = path.resolve(process.cwd(), 'prisma/freshmart.db');
+    const p2 = path.resolve(process.cwd(), 'prisma/prisma/freshmart.db');
+    if (fs.existsSync(p1)) dbPath = p1;
+    else if (fs.existsSync(p2)) dbPath = p2;
+
+    if (!dbPath) {
+      res.status(404).json({ message: 'Database file not found' });
+      return;
+    }
+
+    res.download(dbPath, `freshmart_backup_${Date.now()}.db`);
   } catch (error) { next(error); }
 });
 
