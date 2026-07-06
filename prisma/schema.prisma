@@ -70,6 +70,8 @@ model Product {
   taxCategory        TaxCategory?        @relation(fields: [taxCategoryId], references: [id])
   refundItems        RefundItem[]
   saleItems          SaleItem[]
+
+  @@index([categoryId])
 }
 
 model Supplier {
@@ -126,6 +128,10 @@ model Sale {
   user              User               @relation(fields: [userId], references: [id])
   items             SaleItem[]
   payments          SalePayment[]
+
+  @@index([createdAt])
+  @@index([userId])
+  @@index([customerId])
 }
 
 model SaleItem {
@@ -236,6 +242,9 @@ model InventoryMovement {
   createdBy   User?                 @relation("InventoryMovementCreatedBy", fields: [createdById], references: [id])
   product     Product               @relation(fields: [productId], references: [id])
   supplier    Supplier?             @relation(fields: [supplierId], references: [id])
+
+  @@index([productId])
+  @@index([createdAt])
 }
 
 model StockIn {
@@ -326,6 +335,9 @@ model CashMovement {
   createdAt   DateTime         @default(now())
   createdBy   User             @relation(fields: [createdById], references: [id])
   drawer      CashDrawer       @relation(fields: [drawerId], references: [id], onDelete: Cascade)
+
+  @@index([drawerId])
+  @@index([createdAt])
 }
 
 enum Role {

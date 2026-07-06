@@ -54,21 +54,29 @@ export function DashboardPage() {
 
   return (
     <div className="command-center">
-      <header className="topbar">
-        <Link to="/app" className="logo">
-          <div className="mark">🛒</div>
-          <div>FreshMart<small>COMMAND CENTER</small></div>
+      <header className="header">
+        {/* Left */}
+        <Link to="/app" className="brand">
+          <div className="logo">🛒</div>
+          <div className="title">
+            <strong>FreshMart</strong>
+            <span>COMMAND CENTER</span>
+          </div>
         </Link>
-        <div className="searchbar">
+
+        {/* Center */}
+        <div className="search">
           <span>🔍</span>
-          <input placeholder="Search modules, products, receipts…" />
+          <input type="text" placeholder="Search modules, products, receipts..." />
         </div>
-        <div className="top-right">
-          <Link to="/app/pos" className="cta">Open POS</Link>
-          <button type="button" onClick={() => void logout()} className="cta" style={{ background: 'transparent', border: '1px solid var(--cmd-border)', color: 'var(--cmd-text)' }}>
+
+        {/* Right */}
+        <div className="actions">
+          <Link to="/app/pos" className="btn btn-primary">Open POS</Link>
+          <button type="button" onClick={() => void logout()} className="btn btn-secondary">
             Sign out
           </button>
-          <div className="avatar">{user?.name?.charAt(0) ?? 'H'}</div>
+          <div className="avatar">{user?.name?.charAt(0).toUpperCase() ?? 'H'}</div>
         </div>
       </header>
 
