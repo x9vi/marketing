@@ -18,7 +18,8 @@ const apiProxyPaths = [
   '/coupons',
   '/promotions',
   '/tax-categories',
-  '/uploads'
+  '/uploads',
+  '/settings'
 ];
 
 export default defineConfig({

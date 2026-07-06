@@ -38,8 +38,26 @@ export const defaultHardwareSettings: HardwareSettings = {
 
 export async function loadHardwareSettings(): Promise<HardwareSettings> {
   try {
-    const result = await apiFetch<{ settings: HardwareSettings }>('/settings');
-    return result.settings;
+    const result = await apiFetch<{ settings: any }>('/settings');
+    const appSettings = result.settings;
+    
+    return {
+      receiptPrinter: {
+        enabled: appSettings?.pos?.autoPrintReceipt ?? false,
+        interfaceType: 'browser',
+        devicePath: appSettings?.hardware?.receiptPrinter ?? '',
+        printerName: appSettings?.hardware?.receiptPrinter ?? ''
+      },
+      cashDrawer: {
+        enabled: appSettings?.pos?.autoCashDrawer ?? false,
+        triggerViaDrawerKick: true,
+        drawerPort: appSettings?.hardware?.cashDrawer ?? ''
+      },
+      station: {
+        id: 'POS-1',
+        name: 'Main Register'
+      }
+    };
   } catch {
     return { ...defaultHardwareSettings };
   }

@@ -3,12 +3,14 @@ import { Link, Navigate } from 'react-router-dom';
 import { apiFetch } from '../api/client.js';
 import type { DashboardSummary } from '../api/types.js';
 import { useAuth } from '../context/AuthContext.js';
+import { useSettings } from '../context/SettingsContext.js';
 import { formatCurrency } from '../lib/format.js';
 import { defaultAppPath } from '../config/nav.js';
 import './DashboardPage.css';
 
 export function DashboardPage() {
   const { user, logout } = useAuth();
+  const { settings } = useSettings();
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -59,7 +61,7 @@ export function DashboardPage() {
         <Link to="/app" className="brand">
           <div className="logo">🛒</div>
           <div className="title">
-            <strong>FreshMart</strong>
+            <strong>{settings.store.name}</strong>
             <span>COMMAND CENTER</span>
           </div>
         </Link>
@@ -176,7 +178,7 @@ export function DashboardPage() {
         {/* REPORTS & SETTINGS */}
         <section className="section">
           <div className="section-title">
-            <h2>Reports & Activity</h2>
+            <h2>Reports, Activity & Settings</h2>
             <div className="line"></div>
           </div>
           <div className="grid">
@@ -184,6 +186,11 @@ export function DashboardPage() {
               <div className="beam"></div>
               <div className="ic">📊</div>
               <div><div className="name">Activity</div><div className="desc">Audit & sessions</div></div>
+            </Link>
+            <Link to="/app/settings" className="tile c-purple">
+              <div className="beam"></div>
+              <div className="ic">⚙️</div>
+              <div><div className="name">Settings</div><div className="desc">System preferences</div></div>
             </Link>
           </div>
         </section>

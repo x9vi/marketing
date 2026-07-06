@@ -3,6 +3,7 @@ import { apiFetch, apiUrl } from '../api/client.js';
 import type { Customer, Hold, PaymentMethod, Product, Sale, DiscountType, CashDrawer, ZReport, PromotionMatch } from '../api/types.js';
 import { formatCurrency, formatDate } from '../lib/format.js';
 import { useAuth } from '../context/AuthContext.js';
+import { useSettings } from '../context/SettingsContext.js';
 import { Link } from 'react-router-dom';
 import { InlineCashPanel } from '../components/InlineCashPanel.js';
 import { InlineCardPanel } from '../components/InlineCardPanel.js';
@@ -341,8 +342,9 @@ const translations = {
  * buildReceiptHtml — Generates the 72mm thermal receipt HTML string.
  * Pure function: no DOM side-effects, reusable by hardware.ts printSaleReceipt().
  */
-const buildReceiptHtml = (sale: any, lang: 'en' | 'ku', t: typeof translations['en']): string => {
+const buildReceiptHtml = (sale: any, lang: 'en' | 'ku', t: typeof translations['en'], settings: any): string => {
   const isRtl = lang === 'ku';
+  const currencyCode = settings?.store?.currency || 'IQD';
 
   const itemsHtml = (sale.items || []).map((item: any) => {
     const localizedName = productTranslations[item.sku]?.[lang] || item.productName;
@@ -350,10 +352,10 @@ const buildReceiptHtml = (sale: any, lang: 'en' | 'ku', t: typeof translations['
       <tr>
         <td style="padding: 4px 0; font-size: 12px; font-family: monospace; text-align: ${isRtl ? 'right' : 'left'};">
           ${localizedName}<br/>
-          <span style="font-size: 11px; color: #444;">${item.quantity} x ${Number(item.unitPrice).toLocaleString('ar-IQ')} IQD</span>
+          <span style="font-size: 11px; color: #444;">${item.quantity} x ${Number(item.unitPrice).toLocaleString('ar-IQ')} ${currencyCode}</span>
         </td>
         <td style="text-align: ${isRtl ? 'left' : 'right'}; vertical-align: bottom; padding: 4px 0; font-size: 12px;">
-          ${Number(item.lineTotal).toLocaleString('ar-IQ')} IQD
+          ${Number(item.lineTotal).toLocaleString('ar-IQ')} ${currencyCode}
         </td>
       </tr>
     `;
@@ -362,7 +364,7 @@ const buildReceiptHtml = (sale: any, lang: 'en' | 'ku', t: typeof translations['
   const paymentsHtml = (sale.payments || []).map((p: any) => `
     <div style="display: flex; justify-content: space-between; font-size: 11px; margin-top: 2px; direction: ${isRtl ? 'rtl' : 'ltr'};">
       <span>${t.paid} (${p.method === 'CASH' ? t.cash : t.card}):</span>
-      <span>${Number(p.amount).toLocaleString('ar-IQ')} IQD</span>
+      <span>${Number(p.amount).toLocaleString('ar-IQ')} ${currencyCode}</span>
     </div>
   `).join('');
 
@@ -387,16 +389,19 @@ const buildReceiptHtml = (sale: any, lang: 'en' | 'ku', t: typeof translations['
         </style>
       </head>
       <body>
+        ${settings?.receipt?.printLogo && settings?.store?.logoUrl ? `<div class="center"><img src="${settings.store.logoUrl}" style="max-height:60px;margin-bottom:8px;"/></div>` : ''}
         <div class="center">
-          <span style="font-size: 16px;" class="bold">${isRtl ? 'فرێش مارت' : 'FRESHMART'}</span><br/>
-          <span>123 Market Road</span><br/>
-          <span>Tel: +1-555-000-200</span>
+          <span style="font-size: 16px;" class="bold">${settings?.store?.name || 'Store'}</span><br/>
+          ${settings?.receipt?.printStoreInfo ? `
+            <span>${settings?.store?.address || ''}</span><br/>
+            <span>Tel: ${settings?.store?.phone || ''}</span>
+          ` : ''}
         </div>
         <div class="divider"></div>
         <div style="font-size: 11px;">
           <span>${t.receipt} #: ${sale.receiptNumber}</span><br/>
-          <span>${t.date}: ${new Date(sale.createdAt).toLocaleString(isRtl ? 'ku-IQ' : 'en-US')}</span><br/>
-          <span>${t.cashier}: ${sale.user?.name || 'Staff'}</span>
+          ${settings?.receipt?.printDateTime ? `<span>${t.date}: ${new Date(sale.createdAt).toLocaleString(isRtl ? 'ku-IQ' : 'en-US')}</span><br/>` : ''}
+          ${settings?.receipt?.printCashierName ? `<span>${t.cashier}: ${sale.user?.name || 'Staff'}</span>` : ''}
           ${sale.customer ? `<br/><span>${t.customer}: ${sale.customer.name}</span>` : ''}
         </div>
         <div class="divider"></div>
@@ -410,27 +415,27 @@ const buildReceiptHtml = (sale: any, lang: 'en' | 'ku', t: typeof translations['
         <div class="divider"></div>
         <div style="display: flex; justify-content: space-between;" class="bold">
           <span>${t.subtotal}:</span>
-          <span>${Number(sale.subtotal).toLocaleString('ar-IQ')} IQD</span>
+          <span>${Number(sale.subtotal).toLocaleString('ar-IQ')} ${currencyCode}</span>
         </div>
         ${Number(sale.discountAmount) > 0 ? `
         <div style="display: flex; justify-content: space-between;">
           <span>${t.discount}:</span>
-          <span>-${Number(sale.discountAmount).toLocaleString('ar-IQ')} IQD</span>
+          <span>-${Number(sale.discountAmount).toLocaleString('ar-IQ')} ${currencyCode}</span>
         </div>` : ''}
         ${Number(sale.couponDiscount) > 0 ? `
         <div style="display: flex; justify-content: space-between;">
           <span>${t.coupon}:</span>
-          <span>-${Number(sale.couponDiscount).toLocaleString('ar-IQ')} IQD</span>
+          <span>-${Number(sale.couponDiscount).toLocaleString('ar-IQ')} ${currencyCode}</span>
         </div>` : ''}
         <div style="display: flex; justify-content: space-between;" class="bold">
           <span>${t.total}:</span>
-          <span>${Number(sale.total).toLocaleString('ar-IQ')} IQD</span>
+          <span>${Number(sale.total).toLocaleString('ar-IQ')} ${currencyCode}</span>
         </div>
         <div class="divider"></div>
         ${paymentsHtml}
         <div style="display: flex; justify-content: space-between; font-weight: bold; margin-top: 2px;">
           <span>${t.changeDue}:</span>
-          <span>${Number(sale.changeAmount).toLocaleString('ar-IQ')} IQD</span>
+          <span>${Number(sale.changeAmount).toLocaleString('ar-IQ')} ${currencyCode}</span>
         </div>
         ${sale.pointsEarned ? `
         <div style="display: flex; justify-content: space-between; font-size: 11px; margin-top: 4px;">
@@ -439,8 +444,8 @@ const buildReceiptHtml = (sale: any, lang: 'en' | 'ku', t: typeof translations['
         </div>` : ''}
         <div class="divider"></div>
         <div class="center" style="margin-top: 15px; font-size: 11px;">
-          ${isRtl ? 'سوپاس بۆ کڕینەکەتان لە فرێش مارت!' : 'Thank you for shopping at FreshMart!'}<br/>
-          ${isRtl ? 'هەمیشە بەخێربێن.' : 'Please come again.'}
+          ${settings?.receipt?.header || 'Thank you!'}<br/>
+          ${settings?.receipt?.footer || ''}
         </div>
         <div style="height: 35px;"></div>
       </body>
@@ -449,14 +454,15 @@ const buildReceiptHtml = (sale: any, lang: 'en' | 'ku', t: typeof translations['
 };
 
 /** Legacy wrapper — kept so any remaining call sites that pass testMode still work. */
-const printReceipt = (sale: any, lang: 'en' | 'ku', testMode: boolean, triggerToast?: (msg: string) => void) => {
+const printReceipt = (sale: any, lang: 'en' | 'ku', testMode: boolean, triggerToast?: (msg: string) => void, settings?: any) => {
   const t = translations[lang];
   if (testMode && triggerToast) triggerToast(`🖨️ ${t.printSuccess} | 🪙 ${t.drawerSuccess}`);
-  printSaleReceipt(buildReceiptHtml(sale, lang, t));
+  printSaleReceipt(buildReceiptHtml(sale, lang, t, settings));
 };
 
 export function POSPage() {
   const { user, logout } = useAuth();
+  const { settings } = useSettings();
   const isAdmin = user?.role === 'ADMIN';
   const isCashier = user?.role === 'CASHIER';
 
@@ -1025,7 +1031,7 @@ export function POSPage() {
       }
 
       // 2. Print receipt
-      const receiptHtml = buildReceiptHtml(result.sale, lang, t);
+      const receiptHtml = buildReceiptHtml(result.sale, lang, t, settings);
       if (hwSettings.receiptPrinter.enabled) {
         printSaleReceipt(receiptHtml);
         showNotification(`🖨️ ${t.printSuccess}`, 'info');

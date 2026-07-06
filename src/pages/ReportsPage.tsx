@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { apiFetch, apiUrl } from '../api/client.js';
 import { formatCurrency, formatDate } from '../lib/format.js';
+import { useSettings } from '../context/SettingsContext.js';
 
 // ─── Design tokens ─────────────────────────────────────────────────────────────
 const C = {
@@ -1123,6 +1124,7 @@ function AuditSection() {
 
 // ─── MAIN REPORTS PAGE ─────────────────────────────────────────────────────────
 export function ReportsPage() {
+  const { settings } = useSettings();
   const [active,     setActive]     = useState('dashboard');
   const [preset,     setPreset]     = useState<Preset>('month');
   const [customFrom, setCustomFrom] = useState('');
@@ -1186,7 +1188,7 @@ export function ReportsPage() {
             alignItems:'center', justifyContent:'center', fontSize:20 }}>📊</div>
           <div>
             <h1 style={{ margin:0, fontSize:16, fontWeight:800, color: C.text }}>Reports</h1>
-            <p style={{ margin:0, fontSize:11, color: C.muted }}>FreshMart POS · Business Intelligence</p>
+            <p style={{ margin:0, fontSize:11, color: C.muted }}>{settings?.store?.name || 'FreshMart'} POS · Business Intelligence</p>
           </div>
         </div>
         <div style={{ display:'flex', alignItems:'center', gap:10 }}>
