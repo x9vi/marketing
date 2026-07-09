@@ -1251,59 +1251,58 @@ export function POSPage() {
   return (
     <div
       className="flex h-screen w-screen flex-col overflow-hidden font-sans select-none"
-      style={{ padding: '6px', gap: '5px', display: 'flex', flexDirection: 'column', background: '#F8FAFC', color: '#111827' }}
+      style={{ padding: '6px', gap: '5px', display: 'flex', flexDirection: 'column', background: '#F5FBF6', color: '#111827' }}
       dir={isRtl ? 'rtl' : 'ltr'}
     >
       {/* ── HEADER ── */}
-      <header className="flex h-14 items-center justify-between flex-row rounded-xl px-4 flex-shrink-0" style={{ background: '#FFFFFF', border: '1px solid #E5E7EB', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
-        <div className="flex flex-row items-center gap-4">
-          <div className="flex items-center gap-3">
-            <span className="flex h-10 w-10 items-center justify-center rounded-xl text-xl font-black" style={{ background: 'linear-gradient(135deg,#2563EB,#1d4ed8)', boxShadow: '0 4px 12px rgba(37,99,235,0.25)' }}>
+      <header className="flex items-center justify-between flex-row rounded-lg px-3 flex-shrink-0" style={{ height: '40px', background: '#FFFFFF', border: '1px solid #E5E7EB', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+        <div className="flex flex-row items-center gap-3">
+          <div className="flex items-center gap-2">
+            <span className="flex h-7 w-7 items-center justify-center rounded-lg text-sm font-black" style={{ background: 'linear-gradient(135deg,#2563EB,#1d4ed8)', boxShadow: '0 2px 8px rgba(37,99,235,0.25)' }}>
               🛒
             </span>
             <div>
-              <h1 className="text-sm font-black tracking-tight uppercase flex items-center gap-1.5" style={{ color: '#111827' }}>
-                FreshMart Terminal <span className="text-[10px] px-1.5 py-0.5 rounded font-mono" style={{ background: '#EFF6FF', color: '#2563EB', border: '1px solid #BFDBFE' }}>SYS-04</span>
+              <h1 className="text-[11px] font-black tracking-tight uppercase flex items-center gap-1" style={{ color: '#111827', lineHeight: 1.2 }}>
+                FreshMart <span className="font-mono text-[9px] px-1 py-0.5 rounded" style={{ background: '#EFF6FF', color: '#2563EB', border: '1px solid #BFDBFE' }}>SYS-04</span>
               </h1>
-              <p className="text-[10px] font-bold font-mono" style={{ color: '#6B7280' }}>
-                {t.station} · {t.cashier}: {user?.name}
+              <p className="text-[9px] font-semibold font-mono" style={{ color: '#6B7280', lineHeight: 1.2 }}>
+                {t.station} · {user?.name}
               </p>
             </div>
           </div>
-          <div className="h-8 w-[1px]" style={{ background: '#E5E7EB' }} />
-          <div className="flex items-center gap-2">
-            <span className={`h-2.5 w-2.5 rounded-full ${drawer ? 'animate-pulse' : ''}`} style={{ background: drawer ? '#16A34A' : '#DC2626', boxShadow: drawer ? '0 0 6px rgba(22,163,74,0.5)' : 'none' }} />
+          <div className="h-6 w-[1px]" style={{ background: '#E5E7EB' }} />
+          <div className="flex items-center gap-1.5">
+            <span className={`h-2 w-2 rounded-full ${drawer ? 'animate-pulse' : ''}`} style={{ background: drawer ? '#16A34A' : '#DC2626', boxShadow: drawer ? '0 0 5px rgba(22,163,74,0.5)' : 'none' }} />
             <span className="text-[9px] font-black uppercase tracking-wider" style={{ color: drawer ? '#16A34A' : '#DC2626' }}>
               {drawer ? t.activeSession : t.offlineSession}
             </span>
           </div>
         </div>
 
-        <div className="flex flex-row items-center gap-3">
+        <div className="flex flex-row items-center gap-2">
           {/* Language Switcher */}
-          <div className="flex rounded-lg p-0.5" style={{ background: '#F3F4F6', border: '1px solid #E5E7EB' }}>
+          <div className="flex rounded p-0.5" style={{ background: '#F3F4F6', border: '1px solid #E5E7EB' }}>
             <button
               onClick={() => setLang('en')}
-              className="px-3 py-1.5 text-[10px] font-black rounded-md transition-all"
-              style={lang === 'en' ? { background: '#2563EB', color: '#fff', boxShadow: '0 2px 6px rgba(37,99,235,0.3)' } : { color: '#6B7280' }}
+              className="px-2 py-0.5 text-[9px] font-black rounded transition-all"
+              style={lang === 'en' ? { background: '#2563EB', color: '#fff' } : { color: '#6B7280' }}
             >
               EN
             </button>
             <button
               onClick={() => setLang('ku')}
-              className="px-3 py-1.5 text-[10px] font-black rounded-md transition-all"
-              style={lang === 'ku' ? { background: '#2563EB', color: '#fff', boxShadow: '0 2px 6px rgba(37,99,235,0.3)' } : { color: '#6B7280' }}
+              className="px-2 py-0.5 text-[9px] font-black rounded transition-all"
+              style={lang === 'ku' ? { background: '#2563EB', color: '#fff' } : { color: '#6B7280' }}
             >
               کوردی
             </button>
           </div>
 
-
           {/* Exit POS back to Admin dashboard */}
           {isAdmin && (
             <Link
               to="/app"
-              className="rounded-lg px-3 py-1.5 text-[10px] font-black transition-all hover:opacity-80"
+              className="rounded px-2 py-1 text-[9px] font-black transition-all hover:opacity-80"
               style={{ background: '#F3F4F6', border: '1px solid #E5E7EB', color: '#374151', textDecoration: 'none' }}
             >
               🚪 {t.exitTerminal}
@@ -1313,7 +1312,7 @@ export function POSPage() {
           {/* Quick logout option */}
           <button
             onClick={() => void logout()}
-            className="rounded-lg px-3 py-1.5 text-[10px] font-black transition-all hover:opacity-80"
+            className="rounded px-2 py-1 text-[9px] font-black transition-all hover:opacity-80"
             style={{ background: '#FEF2F2', border: '1px solid #FECACA', color: '#DC2626' }}
           >
             👋 {t.signOut}
@@ -1321,29 +1320,29 @@ export function POSPage() {
         </div>
       </header>
 
-      {/* ── MAIN LAYOUT: 62% Checkout | 38% Product+Category ── */}
+      {/* ── MAIN LAYOUT: 58% Checkout | 42% Product+Category ── */}
       <section
         className={`flex flex-1 overflow-hidden min-h-0 ${isRtl ? 'flex-row-reverse' : 'flex-row'}`}
         style={{ gap: '5px' }}
       >
 
-        {/* ─────────── CHECKOUT PANEL (~62%) ─────────── */}
-        <div style={{ flex: '62 0 0', minWidth: 0, display: 'flex', flexDirection: 'column', background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+        {/* ─────────── CHECKOUT PANEL (~58%) ─────────── */}
+        <div style={{ flex: '58 0 0', minWidth: 0, display: 'flex', flexDirection: 'column', background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: '10px', overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
 
           {/* Cart Header */}
-          <div style={{ background: '#F8FAFC', borderBottom: '1px solid #E5E7EB', padding: '6px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: '14px' }}>🧾</span>
-              <span style={{ fontSize: '11px', fontWeight: 800, color: '#111827', textTransform: 'uppercase', letterSpacing: '1.5px' }}>
+          <div style={{ background: '#EEF8F0', borderBottom: '2px solid #D1FAE5', padding: '4px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0, height: '32px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: '12px' }}>🧾</span>
+              <span style={{ fontSize: '10px', fontWeight: 800, color: '#374151', textTransform: 'uppercase', letterSpacing: '1.5px' }}>
                 {isRtl ? 'سەبەتەی ئێستا' : 'CURRENT SALE'}
               </span>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: '11px', fontWeight: 600, color: '#6B7280', fontFamily: 'monospace' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: '10px', fontWeight: 600, color: '#6B7280', fontFamily: 'monospace' }}>
                 {cart.reduce((s, i) => s + i.quantity, 0)} {isRtl ? 'بابەت' : 'items'}
               </span>
               {drawer && (
-                <span style={{ fontSize: '8px', color: '#16A34A', fontWeight: 700, background: '#ECFDF5', border: '1px solid #BBF7D0', padding: '1px 6px', borderRadius: '4px', fontFamily: 'monospace' }}>
+                <span style={{ fontSize: '8px', color: '#16A34A', fontWeight: 700, background: '#ECFDF5', border: '1px solid #BBF7D0', padding: '0px 5px', borderRadius: '3px', fontFamily: 'monospace' }}>
                   ● LIVE
                 </span>
               )}
@@ -1352,20 +1351,20 @@ export function POSPage() {
 
           {/* Customer Badge */}
           {selectedCustomer && (
-            <div style={{ borderBottom: '1px solid #E5E7EB', background: '#FFFBEB', padding: '4px 12px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#FEF9C3', border: '1px solid #FDE68A', borderRadius: '6px', padding: '4px 10px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: '14px' }}>👤</span>
+            <div style={{ borderBottom: '1px solid #E5E7EB', background: '#FFFBEB', padding: '2px 10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#FEF9C3', border: '1px solid #FDE68A', borderRadius: '5px', padding: '2px 8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ fontSize: '12px' }}>👤</span>
                   <div>
-                    <p style={{ fontSize: '12px', fontWeight: 800, color: '#111827', margin: 0, lineHeight: 1.2 }}>{selectedCustomer.name}</p>
-                    <p style={{ fontSize: '9px', color: '#6B7280', fontFamily: 'monospace', margin: 0 }}>
+                    <p style={{ fontSize: '11px', fontWeight: 800, color: '#111827', margin: 0, lineHeight: 1.2 }}>{selectedCustomer.name}</p>
+                    <p style={{ fontSize: '8px', color: '#6B7280', fontFamily: 'monospace', margin: 0 }}>
                       {t.points}: {selectedCustomer.loyaltyPoints}
                     </p>
                   </div>
                 </div>
                 <button
                   onClick={() => { setSelectedCustomer(null); setPointsToRedeem('0'); }}
-                  style={{ color: '#DC2626', fontSize: '13px', fontWeight: 700, background: 'none', border: 'none', cursor: 'pointer', padding: '2px 5px' }}
+                  style={{ color: '#DC2626', fontSize: '11px', fontWeight: 700, background: 'none', border: 'none', cursor: 'pointer', padding: '1px 4px' }}
                 >✕</button>
               </div>
             </div>
@@ -1390,20 +1389,20 @@ export function POSPage() {
                   <col style={{ width: '34px' }} />
                 </colgroup>
                 <thead>
-                  <tr style={{ background: '#F1F5F9', borderBottom: '2px solid #E2E8F0', position: 'sticky', top: 0, zIndex: 1 }}>
-                    <th style={{ padding: '5px 10px 5px 14px', textAlign: 'left', fontSize: '9px', fontWeight: 800, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.8px' }}>
+                  <tr style={{ background: '#EEF8F0', borderBottom: '1px solid #D1FAE5', position: 'sticky', top: 0, zIndex: 1 }}>
+                    <th style={{ padding: '3px 8px 3px 12px', textAlign: 'left', fontSize: '8px', fontWeight: 800, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.8px' }}>
                       {isRtl ? 'بابەت' : 'Item'}
                     </th>
-                    <th style={{ padding: '5px 4px', textAlign: 'center', fontSize: '9px', fontWeight: 800, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.8px' }}>
+                    <th style={{ padding: '3px 4px', textAlign: 'center', fontSize: '8px', fontWeight: 800, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.8px' }}>
                       {isRtl ? 'ژمارە' : 'Qty'}
                     </th>
-                    <th style={{ padding: '5px 4px', textAlign: 'right', fontSize: '9px', fontWeight: 800, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.8px' }}>
-                      {isRtl ? 'نرخ' : 'Unit Price'}
+                    <th style={{ padding: '3px 4px', textAlign: 'right', fontSize: '8px', fontWeight: 800, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.8px' }}>
+                      {isRtl ? 'نرخ' : 'Price'}
                     </th>
-                    <th style={{ padding: '5px 10px 5px 4px', textAlign: 'right', fontSize: '9px', fontWeight: 800, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.8px' }}>
+                    <th style={{ padding: '3px 8px 3px 4px', textAlign: 'right', fontSize: '8px', fontWeight: 800, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.8px' }}>
                       {isRtl ? 'کۆ' : 'Total'}
                     </th>
-                    <th style={{ width: 34 }} />
+                    <th style={{ width: 28 }} />
                   </tr>
                 </thead>
                 <tbody>
@@ -1416,24 +1415,24 @@ export function POSPage() {
                       <tr
                         key={item.product.id}
                         style={{
-                          background: idx % 2 === 0 ? '#FFFFFF' : '#F8FAFC',
-                          borderBottom: '1px solid #F1F5F9',
+                          background: idx % 2 === 0 ? '#FFFFFF' : '#F5FBF6',
+                          borderBottom: '1px solid #EEF8F0',
                           transition: 'background 0.1s',
                         }}
                       >
                         {/* Item Name + SKU */}
-                        <td style={{ padding: '6px 10px 6px 14px', verticalAlign: 'middle' }}>
-                          <div style={{ fontSize: '12.5px', fontWeight: 700, color: '#1E293B', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', direction: isRtl ? 'rtl' : 'ltr', lineHeight: 1.3 }}>
+                        <td style={{ padding: '4px 8px 4px 12px', verticalAlign: 'middle' }}>
+                          <div style={{ fontSize: '11.5px', fontWeight: 700, color: '#1E293B', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', direction: isRtl ? 'rtl' : 'ltr', lineHeight: 1.25 }}>
                             {localizedName}
                           </div>
-                          <div style={{ fontSize: '9px', color: '#94A3B8', fontFamily: 'monospace', marginTop: 1, letterSpacing: '0.2px' }}>
+                          <div style={{ fontSize: '8px', color: '#94A3B8', fontFamily: 'monospace', marginTop: 0, letterSpacing: '0.2px' }}>
                             {item.product.sku}{itemLabel ? ` · ${itemLabel}` : ''}
                           </div>
                         </td>
 
                         {/* Qty Controls */}
-                        <td style={{ padding: '6px 4px', textAlign: 'center', verticalAlign: 'middle' }}>
-                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 3, background: '#F1F5F9', borderRadius: '7px', padding: '2px 3px' }}>
+                        <td style={{ padding: '4px 3px', textAlign: 'center', verticalAlign: 'middle' }}>
+                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 2, background: '#EEF8F0', borderRadius: '6px', padding: '1px 2px' }}>
                             <button
                               onClick={() => {
                                 if (item.quantity <= 1) {
@@ -1446,9 +1445,9 @@ export function POSPage() {
                                   );
                                 }
                               }}
-                              style={{ width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#FFFFFF', border: '1px solid #CBD5E1', borderRadius: '5px', color: '#475569', fontSize: '14px', fontWeight: 900, cursor: 'pointer', flexShrink: 0, lineHeight: 1 }}
+                              style={{ width: 18, height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#FFFFFF', border: '1px solid #D1FAE5', borderRadius: '4px', color: '#475569', fontSize: '12px', fontWeight: 900, cursor: 'pointer', flexShrink: 0, lineHeight: 1 }}
                             >−</button>
-                            <span style={{ minWidth: 28, textAlign: 'center', fontSize: '13px', fontFamily: 'monospace', fontWeight: 800, color: '#0F172A', lineHeight: 1 }}>
+                            <span style={{ minWidth: 24, textAlign: 'center', fontSize: '11px', fontFamily: 'monospace', fontWeight: 800, color: '#0F172A', lineHeight: 1 }}>
                               {item.product.unit === 'KG' || item.product.unit === 'LITER'
                                 ? item.quantity.toFixed(2)
                                 : item.quantity}
@@ -1461,36 +1460,36 @@ export function POSPage() {
                                   )
                                 )
                               }
-                              style={{ width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#FFFFFF', border: '1px solid #CBD5E1', borderRadius: '5px', color: '#475569', fontSize: '14px', fontWeight: 900, cursor: 'pointer', flexShrink: 0, lineHeight: 1 }}
+                              style={{ width: 18, height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#FFFFFF', border: '1px solid #D1FAE5', borderRadius: '4px', color: '#475569', fontSize: '12px', fontWeight: 900, cursor: 'pointer', flexShrink: 0, lineHeight: 1 }}
                             >+</button>
                           </div>
                         </td>
 
                         {/* Unit Price */}
-                        <td style={{ padding: '6px 4px', textAlign: 'right', verticalAlign: 'middle' }}>
-                          <span style={{ fontSize: '11.5px', fontFamily: 'monospace', fontWeight: 600, color: '#64748B' }}>
+                        <td style={{ padding: '4px 3px', textAlign: 'right', verticalAlign: 'middle' }}>
+                          <span style={{ fontSize: '10.5px', fontFamily: 'monospace', fontWeight: 600, color: '#64748B' }}>
                             {formatCurrency(Number(item.product.price))}
                           </span>
                         </td>
 
                         {/* Line Total */}
-                        <td style={{ padding: '6px 10px 6px 4px', textAlign: 'right', verticalAlign: 'middle' }}>
-                          <span style={{ fontSize: '13px', fontFamily: 'monospace', fontWeight: 800, color: '#16A34A', letterSpacing: '-0.3px' }}>
+                        <td style={{ padding: '4px 8px 4px 3px', textAlign: 'right', verticalAlign: 'middle' }}>
+                          <span style={{ fontSize: '11.5px', fontFamily: 'monospace', fontWeight: 800, color: '#16A34A', letterSpacing: '-0.3px' }}>
                             {formatCurrency(lineTotal)}
                           </span>
                         </td>
 
                         {/* Delete */}
-                        <td style={{ padding: '6px 6px 6px 0', textAlign: 'center', verticalAlign: 'middle' }}>
+                        <td style={{ padding: '4px 4px 4px 0', textAlign: 'center', verticalAlign: 'middle' }}>
                           <button
                             onClick={() => handleRemoveCartItem(item.product.id)}
                             title={t.remove}
                             style={{
-                              width: 22, height: 22,
+                              width: 18, height: 18,
                               display: 'flex', alignItems: 'center', justifyContent: 'center',
                               background: '#FEE2E2', border: '1px solid #FECACA',
-                              borderRadius: '5px', color: '#EF4444',
-                              fontSize: '10px', fontWeight: 900,
+                              borderRadius: '4px', color: '#EF4444',
+                              fontSize: '9px', fontWeight: 900,
                               cursor: 'pointer', lineHeight: 1, flexShrink: 0,
                             }}
                           >✕</button>
@@ -1508,49 +1507,49 @@ export function POSPage() {
 
             {/* Optional discount/promo lines – only shown when active */}
             {(Number(pointsToRedeem) > 0 && selectedCustomer) || (manualDiscount > 0 || couponDiscount > 0) || promoDiscount > 0 ? (
-              <div style={{ padding: '5px 12px 0', display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <div style={{ padding: '3px 10px 0', display: 'flex', flexDirection: 'column', gap: 1 }}>
                 {(Number(pointsToRedeem) > 0 && selectedCustomer) && (
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: '10px', color: '#DC2626', fontWeight: 600 }}>{t.pointsRedeemed} ({pointsToRedeem}pts)</span>
-                    <span style={{ fontSize: '10px', color: '#DC2626', fontFamily: 'monospace', fontWeight: 700 }}>−{formatCurrency(customerRedeemable)}</span>
+                    <span style={{ fontSize: '9px', color: '#DC2626', fontWeight: 600 }}>{t.pointsRedeemed} ({pointsToRedeem}pts)</span>
+                    <span style={{ fontSize: '9px', color: '#DC2626', fontFamily: 'monospace', fontWeight: 700 }}>−{formatCurrency(customerRedeemable)}</span>
                   </div>
                 )}
                 {(manualDiscount > 0 || couponDiscount > 0) && (
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: '10px', color: '#DC2626', fontWeight: 600 }}>{t.discount}</span>
-                    <span style={{ fontSize: '10px', color: '#DC2626', fontFamily: 'monospace', fontWeight: 700 }}>−{formatCurrency(manualDiscount + couponDiscount)}</span>
+                    <span style={{ fontSize: '9px', color: '#DC2626', fontWeight: 600 }}>{t.discount}</span>
+                    <span style={{ fontSize: '9px', color: '#DC2626', fontFamily: 'monospace', fontWeight: 700 }}>−{formatCurrency(manualDiscount + couponDiscount)}</span>
                   </div>
                 )}
                 {promoDiscount > 0 && (
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: '10px', color: '#16A34A', fontWeight: 600 }}>Auto Promos</span>
-                    <span style={{ fontSize: '10px', color: '#16A34A', fontFamily: 'monospace', fontWeight: 700 }}>−{formatCurrency(promoDiscount)}</span>
+                    <span style={{ fontSize: '9px', color: '#16A34A', fontWeight: 600 }}>Auto Promos</span>
+                    <span style={{ fontSize: '9px', color: '#16A34A', fontFamily: 'monospace', fontWeight: 700 }}>−{formatCurrency(promoDiscount)}</span>
                   </div>
                 )}
               </div>
             ) : null}
 
             {/* GRAND TOTAL BAR */}
-            <div style={{ margin: '6px 10px 4px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'linear-gradient(135deg, #DCFCE7, #BBF7D0)', border: '1.5px solid #4ADE80', borderRadius: '10px', padding: '9px 14px' }}>
+            <div style={{ margin: '4px 8px 3px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'linear-gradient(135deg, #D1FAE5, #A7F3D0)', border: '1.5px solid #6EE7B7', borderRadius: '8px', padding: '6px 12px' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-                <span style={{ fontSize: '9px', color: '#15803D', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '2.5px' }}>
-                  {isRtl ? 'کۆی گشتی' : 'TOTAL'}
+                <span style={{ fontSize: '8px', color: '#15803D', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '2px' }}>
+                  {isRtl ? 'کۆی گشتی' : 'TOTAL DUE'}
                 </span>
-                <span style={{ fontSize: '9px', color: '#86EFAC', fontFamily: 'monospace', fontWeight: 600 }}>
+                <span style={{ fontSize: '8px', color: '#4ADE80', fontFamily: 'monospace', fontWeight: 600 }}>
                   {cart.length} {isRtl ? 'بابەت' : 'items'}
                 </span>
               </div>
-              <span style={{ fontSize: '30px', color: '#15803D', fontFamily: 'monospace', fontWeight: 900, letterSpacing: '-1px', lineHeight: 1 }}>
+              <span style={{ fontSize: '26px', color: '#15803D', fontFamily: 'monospace', fontWeight: 900, letterSpacing: '-1px', lineHeight: 1 }}>
                 {formatCurrency(total)}
               </span>
             </div>
 
             {/* Loyalty points slider */}
             {selectedCustomer && selectedCustomer.loyaltyPoints > 0 && (
-              <div style={{ margin: '0 10px 4px', background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: '6px', padding: '4px 10px' }}>
+              <div style={{ margin: '0 8px 3px', background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: '5px', padding: '3px 8px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
-                  <span style={{ fontSize: '9px', color: '#6B7280', fontFamily: 'monospace' }}>Redeem (Max {selectedCustomer.loyaltyPoints} pts)</span>
-                  <span style={{ fontSize: '9px', color: '#D97706', fontWeight: 700, fontFamily: 'monospace' }}>−{formatCurrency(customerRedeemable)}</span>
+                  <span style={{ fontSize: '8px', color: '#6B7280', fontFamily: 'monospace' }}>Redeem (Max {selectedCustomer.loyaltyPoints} pts)</span>
+                  <span style={{ fontSize: '8px', color: '#D97706', fontWeight: 700, fontFamily: 'monospace' }}>−{formatCurrency(customerRedeemable)}</span>
                 </div>
                 <input
                   type="range"
@@ -1570,31 +1569,31 @@ export function POSPage() {
               opacity: checkoutView === 'menu' ? 1 : 0,
               transition: 'max-height 0.3s cubic-bezier(0.4,0,0.2,1), opacity 0.2s ease',
             }}>
-              <div style={{ padding: '0 10px 8px', display: 'flex', flexDirection: 'column', gap: 5 }}>
+              <div style={{ padding: '0 8px 6px', display: 'flex', flexDirection: 'column', gap: 4 }}>
 
-                {/* PRIMARY ROW: Cash | Card | Split */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
+                {/* PRIMARY ROW: Cash | Card | Split — compact 32px height */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 5 }}>
                   {/* Cash */}
                   <button
                     id="pos-cash-payment-btn"
                     onClick={() => setCheckoutView('cash')}
                     disabled={!cart.length || !drawer}
                     style={{
-                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
-                      height: '50px',
-                      background: 'linear-gradient(160deg, #22C55E, #16A34A)',
-                      border: 'none', borderRadius: '10px', color: '#fff',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+                      height: '32px',
+                      background: 'linear-gradient(160deg, #34D399, #10B981)',
+                      border: 'none', borderRadius: '8px', color: '#fff',
                       cursor: (!cart.length || !drawer) ? 'not-allowed' : 'pointer',
                       opacity: (!cart.length || !drawer) ? 0.4 : 1,
                       transition: 'transform 0.1s, opacity 0.15s',
-                      boxShadow: '0 3px 10px rgba(22,163,74,0.35)',
+                      boxShadow: '0 2px 6px rgba(22,163,74,0.3)',
                     }}
                     onMouseDown={e => { if (cart.length && drawer) (e.currentTarget as HTMLElement).style.transform = 'scale(0.97)'; }}
                     onMouseUp={e => { (e.currentTarget as HTMLElement).style.transform = 'scale(1)'; }}
                     onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = 'scale(1)'; }}
                   >
-                    <span style={{ fontSize: '18px', lineHeight: 1 }}>💵</span>
-                    <span style={{ fontSize: '13px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.8px' }}>
+                    <span style={{ fontSize: '14px', lineHeight: 1 }}>💵</span>
+                    <span style={{ fontSize: '11px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                       {lang === 'ku' ? 'نەخت' : 'Cash'}
                     </span>
                   </button>
@@ -1605,21 +1604,21 @@ export function POSPage() {
                     onClick={() => setCheckoutView('card')}
                     disabled={!cart.length || !drawer}
                     style={{
-                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
-                      height: '50px',
-                      background: 'linear-gradient(160deg, #3B82F6, #1D4ED8)',
-                      border: 'none', borderRadius: '10px', color: '#fff',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+                      height: '32px',
+                      background: 'linear-gradient(160deg, #60A5FA, #3B82F6)',
+                      border: 'none', borderRadius: '8px', color: '#fff',
                       cursor: (!cart.length || !drawer) ? 'not-allowed' : 'pointer',
                       opacity: (!cart.length || !drawer) ? 0.4 : 1,
                       transition: 'transform 0.1s, opacity 0.15s',
-                      boxShadow: '0 3px 10px rgba(37,99,235,0.35)',
+                      boxShadow: '0 2px 6px rgba(37,99,235,0.3)',
                     }}
                     onMouseDown={e => { if (cart.length && drawer) (e.currentTarget as HTMLElement).style.transform = 'scale(0.97)'; }}
                     onMouseUp={e => { (e.currentTarget as HTMLElement).style.transform = 'scale(1)'; }}
                     onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = 'scale(1)'; }}
                   >
-                    <span style={{ fontSize: '18px', lineHeight: 1 }}>💳</span>
-                    <span style={{ fontSize: '13px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.8px' }}>
+                    <span style={{ fontSize: '14px', lineHeight: 1 }}>💳</span>
+                    <span style={{ fontSize: '11px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                       {lang === 'ku' ? 'کارت' : 'Card'}
                     </span>
                   </button>
@@ -1630,58 +1629,60 @@ export function POSPage() {
                     onClick={() => setCheckoutView('split')}
                     disabled={!cart.length || !drawer}
                     style={{
-                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
-                      height: '50px',
-                      background: 'linear-gradient(160deg, #8B5CF6, #6D28D9)',
-                      border: 'none', borderRadius: '10px', color: '#fff',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+                      height: '32px',
+                      background: 'linear-gradient(160deg, #A78BFA, #8B5CF6)',
+                      border: 'none', borderRadius: '8px', color: '#fff',
                       cursor: (!cart.length || !drawer) ? 'not-allowed' : 'pointer',
                       opacity: (!cart.length || !drawer) ? 0.4 : 1,
                       transition: 'transform 0.1s, opacity 0.15s',
-                      boxShadow: '0 3px 10px rgba(109,40,217,0.35)',
+                      boxShadow: '0 2px 6px rgba(109,40,217,0.3)',
                     }}
                     onMouseDown={e => { if (cart.length && drawer) (e.currentTarget as HTMLElement).style.transform = 'scale(0.97)'; }}
                     onMouseUp={e => { (e.currentTarget as HTMLElement).style.transform = 'scale(1)'; }}
                     onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = 'scale(1)'; }}
                   >
-                    <span style={{ fontSize: '18px', lineHeight: 1 }}>⚖️</span>
-                    <span style={{ fontSize: '13px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.8px' }}>
+                    <span style={{ fontSize: '14px', lineHeight: 1 }}>⚖️</span>
+                    <span style={{ fontSize: '11px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                       {lang === 'ku' ? 'دووبەش' : 'Split'}
                     </span>
                   </button>
                 </div>
 
-                {/* SECONDARY ROW: 4-in-a-row compact action buttons */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 5 }}>
+                {/* SECONDARY ROW: compact toolbar buttons (Exact Cash, Recall, Park, Void, Drawer) */}
+                <div style={{ display: 'flex', gap: 4 }}>
 
                   {/* Exact Cash [F2] */}
                   <button
                     onClick={() => { if (cart.length && drawer) { void triggerCheckout(true); } }}
                     disabled={!cart.length || !drawer}
+                    title="Exact Cash (F2)"
                     style={{
-                      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2,
-                      height: '40px',
-                      background: '#F0FDF4', border: '1px solid #BBF7D0',
-                      borderRadius: '8px', color: '#15803D',
+                      flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3,
+                      height: '26px',
+                      background: '#EEF8F0', border: '1px solid #D1FAE5',
+                      borderRadius: '6px', color: '#15803D',
                       cursor: (!cart.length || !drawer) ? 'not-allowed' : 'pointer',
                       opacity: (!cart.length || !drawer) ? 0.4 : 1,
                       transition: 'background 0.1s',
                     }}
                   >
-                    <span style={{ fontSize: '12px', lineHeight: 1 }}>⚡</span>
-                    <span style={{ fontSize: '8.5px', fontWeight: 800, textAlign: 'center', lineHeight: 1.2, color: '#15803D' }}>
-                      {lang === 'ku' ? 'نەختی تەواو' : 'Exact Cash'}
+                    <span style={{ fontSize: '10px', lineHeight: 1 }}>⚡</span>
+                    <span style={{ fontSize: '8px', fontWeight: 800, color: '#15803D', whiteSpace: 'nowrap' }}>
+                      {lang === 'ku' ? 'نەخت تەواو' : 'Exact'}
                     </span>
                   </button>
 
                   {/* Recall Parked */}
                   <button
                     onClick={() => { void loadHoldsCount(); setActiveModal('holds'); }}
+                    title="Recall Parked"
                     style={{
-                      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2,
-                      height: '40px',
-                      background: holdsCount > 0 ? '#FFFBEB' : '#F9FAFB',
+                      flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3,
+                      height: '26px',
+                      background: holdsCount > 0 ? '#FEF3C7' : '#FFFFFF',
                       border: holdsCount > 0 ? '1px solid #FDE68A' : '1px solid #E5E7EB',
-                      borderRadius: '8px',
+                      borderRadius: '6px',
                       color: holdsCount > 0 ? '#B45309' : '#6B7280',
                       cursor: 'pointer',
                       transition: 'background 0.1s',
@@ -1689,10 +1690,10 @@ export function POSPage() {
                     }}
                   >
                     {holdsCount > 0 && (
-                      <span style={{ position: 'absolute', top: 4, right: 5, fontSize: '7px', background: '#F59E0B', color: '#fff', borderRadius: '8px', padding: '0px 4px', fontWeight: 800, fontFamily: 'monospace' }}>{holdsCount}</span>
+                      <span style={{ position: 'absolute', top: 2, right: 4, fontSize: '7px', background: '#F59E0B', color: '#fff', borderRadius: '6px', padding: '0px 3px', fontWeight: 800, fontFamily: 'monospace' }}>{holdsCount}</span>
                     )}
-                    <span style={{ fontSize: '12px', lineHeight: 1 }}>📥</span>
-                    <span style={{ fontSize: '8.5px', fontWeight: 800, textAlign: 'center', lineHeight: 1.2, color: 'inherit' }}>
+                    <span style={{ fontSize: '10px', lineHeight: 1 }}>📥</span>
+                    <span style={{ fontSize: '8px', fontWeight: 800, color: 'inherit', whiteSpace: 'nowrap' }}>
                       {lang === 'ku' ? 'هێنانەوە' : 'Recall'}
                     </span>
                   </button>
@@ -1701,18 +1702,19 @@ export function POSPage() {
                   <button
                     onClick={() => void saveHold()}
                     disabled={!cart.length}
+                    title="Park Basket (F5)"
                     style={{
-                      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2,
-                      height: '40px',
-                      background: '#F8FAFC', border: '1px solid #E2E8F0',
-                      borderRadius: '8px', color: '#475569',
+                      flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3,
+                      height: '26px',
+                      background: '#FFFFFF', border: '1px solid #E5E7EB',
+                      borderRadius: '6px', color: '#475569',
                       cursor: !cart.length ? 'not-allowed' : 'pointer',
                       opacity: !cart.length ? 0.4 : 1,
                       transition: 'background 0.1s',
                     }}
                   >
-                    <span style={{ fontSize: '12px', lineHeight: 1 }}>📂</span>
-                    <span style={{ fontSize: '8.5px', fontWeight: 800, textAlign: 'center', lineHeight: 1.2, color: 'inherit' }}>
+                    <span style={{ fontSize: '10px', lineHeight: 1 }}>📂</span>
+                    <span style={{ fontSize: '8px', fontWeight: 800, color: 'inherit', whiteSpace: 'nowrap' }}>
                       {lang === 'ku' ? 'ڕاگرتن' : 'Park'}
                     </span>
                   </button>
@@ -1721,49 +1723,50 @@ export function POSPage() {
                   <button
                     onClick={handleVoidTransaction}
                     disabled={!cart.length}
+                    title="Void Sale (F8)"
                     style={{
-                      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2,
-                      height: '40px',
-                      background: '#FFF5F5', border: '1px solid #FECACA',
-                      borderRadius: '8px', color: '#DC2626',
+                      flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3,
+                      height: '26px',
+                      background: '#FEF2F2', border: '1px solid #FCA5A5',
+                      borderRadius: '6px', color: '#DC2626',
                       cursor: !cart.length ? 'not-allowed' : 'pointer',
                       opacity: !cart.length ? 0.4 : 1,
                       transition: 'background 0.1s',
                     }}
                   >
-                    <span style={{ fontSize: '12px', lineHeight: 1 }}>🚫</span>
-                    <span style={{ fontSize: '8.5px', fontWeight: 800, textAlign: 'center', lineHeight: 1.2, color: 'inherit' }}>
+                    <span style={{ fontSize: '10px', lineHeight: 1 }}>🚫</span>
+                    <span style={{ fontSize: '8px', fontWeight: 800, color: 'inherit', whiteSpace: 'nowrap' }}>
                       {lang === 'ku' ? 'پوچەڵکردن' : 'Void'}
                     </span>
                   </button>
 
-                </div>
-
-                {/* TERTIARY ROW: Manual Open Cash Drawer */}
-                {drawer && (
-                  <div style={{ display: 'flex', gap: 5 }}>
+                  {/* Open Cash Drawer */}
+                  {drawer && (
                     <button
                       id="pos-manual-drawer-pop-btn"
                       onClick={() => handleManualDrawerPop('Manual open by cashier')}
+                      title="Open Cash Drawer"
                       style={{
-                        flex: 1,
-                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                        height: '34px',
-                        background: '#F0FDF4', border: '1.5px solid #86EFAC',
-                        borderRadius: '8px', color: '#15803D',
+                        flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3,
+                        height: '26px',
+                        background: '#F0FDF4', border: '1px solid #86EFAC',
+                        borderRadius: '6px', color: '#15803D',
                         cursor: 'pointer',
                         transition: 'background 0.1s, transform 0.08s',
-                        fontWeight: 800, fontSize: '11px', letterSpacing: '0.3px',
+                        whiteSpace: 'nowrap',
                       }}
                       onMouseDown={e => { (e.currentTarget as HTMLElement).style.transform = 'scale(0.97)'; }}
                       onMouseUp={e => { (e.currentTarget as HTMLElement).style.transform = 'scale(1)'; }}
                       onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = 'scale(1)'; }}
                     >
-                      <span style={{ fontSize: '14px', lineHeight: 1 }}>🗃️</span>
-                      <span>{lang === 'ku' ? 'کرانەوەی سندوقی نەختی' : 'Open Cash Drawer'}</span>
+                      <span style={{ fontSize: '10px', lineHeight: 1 }}>🗃️</span>
+                      <span style={{ fontSize: '8px', fontWeight: 800, color: '#15803D' }}>
+                        {lang === 'ku' ? 'سندوق' : 'Drawer'}
+                      </span>
                     </button>
-                  </div>
-                )}
+                  )}
+
+                </div>
 
               </div>
             </div>
@@ -1809,11 +1812,11 @@ export function POSPage() {
 
             {/* Sale success banner */}
             {sale && checkoutView === 'menu' && (
-              <div style={{ margin: '0 12px 10px', borderRadius: '8px', border: '1px solid #BBF7D0', background: '#ECFDF5', padding: '8px 12px' }}>
-                <p style={{ fontSize: '11px', color: '#16A34A', fontWeight: 800, margin: 0 }}>✓ {t.transactionComplete}: R-{sale.receiptNumber}</p>
-                <div style={{ display: 'flex', gap: 14, marginTop: 4 }}>
-                  <a style={{ fontSize: '11px', color: '#2563EB', fontWeight: 700, textDecoration: 'underline' }} href={apiUrl(`/sales/${sale.id}/receipt.pdf`)} target="_blank" rel="noreferrer">📄 {t.downloadReceipt}</a>
-                  <button style={{ fontSize: '11px', color: '#2563EB', fontWeight: 700, textDecoration: 'underline', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }} onClick={() => { if (sale) { const html = buildReceiptHtml(sale, lang, translations[lang]); printSaleReceipt(html); showNotification(`🖨️ ${t.reprintingCopy}`, 'info'); } }}>🖨️ {t.reprintReceipt}</button>
+              <div style={{ margin: '0 8px 5px', borderRadius: '6px', border: '1px solid #BBF7D0', background: '#ECFDF5', padding: '5px 10px' }}>
+                <p style={{ fontSize: '10px', color: '#16A34A', fontWeight: 800, margin: 0 }}>✓ {t.transactionComplete}: R-{sale.receiptNumber}</p>
+                <div style={{ display: 'flex', gap: 10, marginTop: 2 }}>
+                  <a style={{ fontSize: '10px', color: '#2563EB', fontWeight: 700, textDecoration: 'underline' }} href={apiUrl(`/sales/${sale.id}/receipt.pdf`)} target="_blank" rel="noreferrer">📄 {t.downloadReceipt}</a>
+                  <button style={{ fontSize: '10px', color: '#2563EB', fontWeight: 700, textDecoration: 'underline', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }} onClick={() => { if (sale) { const html = buildReceiptHtml(sale, lang, translations[lang]); printSaleReceipt(html); showNotification(`🖨️ ${t.reprintingCopy}`, 'info'); } }}>🖨️ {t.reprintReceipt}</button>
                 </div>
               </div>
             )}
@@ -1822,17 +1825,17 @@ export function POSPage() {
         </div>
         {/* ─── END CHECKOUT PANEL ─── */}
 
-        {/* ─────────── PRODUCT + CATEGORY PANEL (~38%) ─────────── */}
-        <div style={{ flex: '38 0 0', minWidth: 0, display: 'flex', flexDirection: 'column', border: '1px solid #E5E7EB', borderRadius: '12px', overflow: 'hidden', background: '#FFFFFF', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
+        {/* ─────────── PRODUCT + CATEGORY PANEL (~42%) ─────────── */}
+        <div style={{ flex: '42 0 0', minWidth: 0, display: 'flex', flexDirection: 'column', border: '1px solid #E5E7EB', borderRadius: '10px', overflow: 'hidden', background: '#FFFFFF', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
 
           {/* Search / Barcode bar */}
-          <form onSubmit={handleBarcodeSubmit} style={{ flexShrink: 0, display: 'flex', alignItems: 'center', borderBottom: '1px solid #E5E7EB', background: '#F8FAFC', height: 42 }}>
-            <span style={{ fontSize: '10px', fontFamily: 'monospace', color: '#16A34A', padding: '0 10px', flexShrink: 0, letterSpacing: '1px', fontWeight: 700 }}>[F1]</span>
+          <form onSubmit={handleBarcodeSubmit} style={{ flexShrink: 0, display: 'flex', alignItems: 'center', borderBottom: '1px solid #E5E7EB', background: '#F5FBF6', height: 36 }}>
+            <span style={{ fontSize: '9px', fontFamily: 'monospace', color: '#16A34A', padding: '0 8px', flexShrink: 0, letterSpacing: '1px', fontWeight: 700 }}>[F1]</span>
             <input
               ref={searchInputRef}
               autoFocus
               type="text"
-              style={{ flex: 1, height: '100%', background: 'transparent', border: 'none', outline: 'none', color: '#111827', fontSize: '12px', fontFamily: 'monospace', padding: '0 8px', letterSpacing: '0.3px' }}
+              style={{ flex: 1, height: '100%', background: 'transparent', border: 'none', outline: 'none', color: '#111827', fontSize: '11px', fontFamily: 'monospace', padding: '0 6px', letterSpacing: '0.3px' }}
               placeholder={isRtl ? 'گەڕان / بارکۆد...' : 'Scan barcode or search...'}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
@@ -1848,7 +1851,7 @@ export function POSPage() {
           <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
 
             {/* Product Grid */}
-            <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'thin', scrollbarColor: '#E5E7EB transparent', background: '#F8FAFC' }}>
+            <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'thin', scrollbarColor: '#E5E7EB transparent', background: '#F5FBF6' }}>
               {filteredProducts.length === 0 ? (
                 <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
                   <span style={{ fontSize: '24px', opacity: 0.3 }}>🔍</span>
@@ -1906,12 +1909,12 @@ export function POSPage() {
             </div>
 
             {/* ── Category Sidebar (far right, text-only) ── */}
-            <div style={{ width: '92px', flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#FFFFFF', borderLeft: '1px solid #E5E7EB' }}>
-              <div style={{ padding: '5px 4px', textAlign: 'center', background: '#F8FAFC', borderBottom: '1px solid #E5E7EB', flexShrink: 0 }}>
-                <span style={{ fontSize: '8px', fontWeight: 900, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '1px' }}>FILTER</span>
+            <div style={{ width: '80px', flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#FFFFFF', borderLeft: '1px solid #E5E7EB' }}>
+              <div style={{ padding: '3px 4px', textAlign: 'center', background: '#F5FBF6', borderBottom: '1px solid #E5E7EB', flexShrink: 0 }}>
+                <span style={{ fontSize: '7px', fontWeight: 900, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '1px' }}>FILTER</span>
               </div>
 
-              <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 3, padding: '4px', scrollbarWidth: 'thin', scrollbarColor: '#D1D5DB #F3F4F6' }}>
+              <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2, padding: '3px', scrollbarWidth: 'thin', scrollbarColor: '#D1D5DB #F3F4F6' }}>
                 {/* ALL button */}
                 <button
                   onClick={() => setSelectedCategory('all')}
@@ -1945,13 +1948,13 @@ export function POSPage() {
       </section>
 
       {/* ── FOOTER BAR ── */}
-      <footer className="flex h-12 items-center justify-between rounded-xl px-4 flex-shrink-0" style={{ background: '#FFFFFF', border: '1px solid #E5E7EB', boxShadow: '0 -1px 4px rgba(0,0,0,0.05)' }}>
-        <div className="flex gap-2">
+      <footer className="flex items-center justify-between rounded-lg px-3 flex-shrink-0" style={{ height: '30px', background: '#FFFFFF', border: '1px solid #E5E7EB', boxShadow: '0 -1px 3px rgba(0,0,0,0.04)' }}>
+        <div className="flex gap-1.5 items-center">
           {/* Apply Coupon */}
           <button
             onClick={() => { setAppliedCoupon(null); setCouponCode(''); setActiveModal('coupon'); }}
-            className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors hover:opacity-80"
-            style={{ background: '#F3F4F6', border: '1px solid #E5E7EB', color: '#374151' }}
+            className="flex items-center gap-1 rounded px-2 py-0.5 text-[9px] font-semibold transition-colors hover:opacity-80"
+            style={{ background: '#F3F4F6', border: '1px solid #E5E7EB', color: '#374151', height: '22px' }}
           >
             🎟️ {t.applyCoupon}
           </button>
@@ -1959,8 +1962,8 @@ export function POSPage() {
           {/* Refund Lookup */}
           <button
             onClick={() => setActiveModal('refund')}
-            className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors hover:opacity-80"
-            style={{ background: '#F3F4F6', border: '1px solid #E5E7EB', color: '#374151' }}
+            className="flex items-center gap-1 rounded px-2 py-0.5 text-[9px] font-semibold transition-colors hover:opacity-80"
+            style={{ background: '#F3F4F6', border: '1px solid #E5E7EB', color: '#374151', height: '22px' }}
           >
             🔄 {t.refundLookup}
           </button>
@@ -1968,8 +1971,8 @@ export function POSPage() {
           {/* Cash Till Session */}
           <button
             onClick={() => { setDrawerFloatInput('100000'); setActiveModal('drawer'); }}
-            className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors hover:opacity-80"
-            style={{ background: '#F3F4F6', border: '1px solid #E5E7EB', color: '#374151' }}
+            className="flex items-center gap-1 rounded px-2 py-0.5 text-[9px] font-semibold transition-colors hover:opacity-80"
+            style={{ background: '#F3F4F6', border: '1px solid #E5E7EB', color: '#374151', height: '22px' }}
           >
             🪙 {t.cashTillSession}
           </button>
@@ -1977,8 +1980,8 @@ export function POSPage() {
           {/* Z-Report */}
           <button
             onClick={handleShowZReport}
-            className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-colors hover:opacity-80"
-            style={{ background: '#EFF6FF', border: '1px solid #BFDBFE', color: '#2563EB' }}
+            className="flex items-center gap-1 rounded px-2 py-0.5 text-[9px] font-bold transition-colors hover:opacity-80"
+            style={{ background: '#EFF6FF', border: '1px solid #BFDBFE', color: '#2563EB', height: '22px' }}
           >
             📊 {t.shiftZReport}
           </button>
@@ -1987,10 +1990,10 @@ export function POSPage() {
         <div>
           <button
             onClick={() => { void loadHoldsCount(); setActiveModal('holds'); }}
-            className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-all ${holdsCount > 0 ? 'animate-pulse' : ''}`}
+            className={`rounded px-2 py-0.5 text-[9px] font-bold transition-all ${holdsCount > 0 ? 'animate-pulse' : ''}`}
             style={holdsCount > 0
-              ? { background: '#FFFBEB', border: '1px solid #FDE68A', color: '#D97706' }
-              : { background: '#F3F4F6', border: '1px solid #E5E7EB', color: '#6B7280' }}
+              ? { background: '#FFFBEB', border: '1px solid #FDE68A', color: '#D97706', height: '22px' }
+              : { background: '#F3F4F6', border: '1px solid #E5E7EB', color: '#6B7280', height: '22px' }}
           >
             📥 {t.recallHolds} ({holdsCount})
           </button>
