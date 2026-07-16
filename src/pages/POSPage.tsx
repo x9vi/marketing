@@ -1816,7 +1816,7 @@ export function POSPage() {
                 <p style={{ fontSize: '10px', color: '#16A34A', fontWeight: 800, margin: 0 }}>✓ {t.transactionComplete}: R-{sale.receiptNumber}</p>
                 <div style={{ display: 'flex', gap: 10, marginTop: 2 }}>
                   <a style={{ fontSize: '10px', color: '#2563EB', fontWeight: 700, textDecoration: 'underline' }} href={apiUrl(`/sales/${sale.id}/receipt.pdf`)} target="_blank" rel="noreferrer">📄 {t.downloadReceipt}</a>
-                  <button style={{ fontSize: '10px', color: '#2563EB', fontWeight: 700, textDecoration: 'underline', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }} onClick={() => { if (sale) { const html = buildReceiptHtml(sale, lang, translations[lang]); printSaleReceipt(html); showNotification(`🖨️ ${t.reprintingCopy}`, 'info'); } }}>🖨️ {t.reprintReceipt}</button>
+                  <button style={{ fontSize: '10px', color: '#2563EB', fontWeight: 700, textDecoration: 'underline', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }} onClick={() => { if (sale) { const html = buildReceiptHtml(sale, lang, translations[lang], settings); printSaleReceipt(html); showNotification(`🖨️ ${t.reprintingCopy}`, 'info'); } }}>🖨️ {t.reprintReceipt}</button>
                 </div>
               </div>
             )}

@@ -66,7 +66,21 @@ export function DashboardPage() {
           </div>
         </Link>
 
-        {/* Center */}
+        {/* Center */}without changing its overall clean style. Remove unnecessary vertical space so everything fits on one screen without a scrollbar on a 1080p display. Make the modal compact and professional.
+        Requirements:
+        Reduce top and bottom padding by 30–40%.
+        Make section spacing tighter.
+        Reduce the height of each information row.
+        Display Cashier, Customer, Payment Method, and Status in a compact two-column layout.
+        Make the Purchased Items table smaller and automatically collapse empty space.
+        If there are no purchased items, show a small "No items" message instead of a large empty box.
+        Make the totals section (Subtotal, Discount, Tax, Grand Total, Change Returned) compact.
+        Place the action buttons (Print Receipt, Download PDF, Refund) in a single sticky row at the bottom that is always visible.
+        The user should never need to scroll just to reach the action buttons.
+        Only allow scrolling when a receipt contains many purchased items.
+        Keep rounded corners, soft shadows, and the existing color palette.
+        Preserve all functionality. This is a layout improvement only.
+        The final result should feel like a modern POS system (Square, Shopify POS, or Lightspeed), with a clean, compact, and efficient design
         <div className="search">
           <span>🔍</span>
           <input type="text" placeholder="Search modules, products, receipts..." />

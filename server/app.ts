@@ -1136,7 +1136,7 @@ app.get('/reports/sales-detail', authRequired, requireRole(Role.ADMIN), async (r
     if (cashierId) where.userId = cashierId;
     if (pm) where.payments = { some: { method: pm } };
     const [sales, total, chartSales] = await Promise.all([
-      prisma.sale.findMany({ where, include: { payments: true, customer: true, user: true }, orderBy: { createdAt: 'desc' }, skip: (page - 1) * limit, take: limit }),
+      prisma.sale.findMany({ where, include: { items: true, payments: true, customer: true, user: true }, orderBy: { createdAt: 'desc' }, skip: (page - 1) * limit, take: limit }),
       prisma.sale.count({ where }),
       prisma.sale.findMany({ where: { createdAt: { gte: from, lte: to }, status: SaleStatus.COMPLETED }, select: { createdAt: true, total: true }, orderBy: { createdAt: 'asc' } }),
     ]);

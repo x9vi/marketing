@@ -21,7 +21,7 @@ export function Layout() {
           </button>
         </div>
       )}
-      <main className="flex-1 flex flex-col overflow-auto relative z-10">
+      <main className="flex-1 flex flex-col overflow-auto relative z-10 scroll-smooth" style={{ scrollBehavior: 'smooth', WebkitOverflowScrolling: 'touch' }}>
         <Outlet />
       </main>
     </div>
